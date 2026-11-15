@@ -9,6 +9,8 @@ if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
 endif()
 if(MSVC)
+    # Sources are UTF-8 (Italian text): tell MSVC, otherwise it reads them as Windows-1252.
+    add_compile_options(/utf-8 /bigobj)
     # Static runtime: the plugin doesn't need the VC++ redistributable installed.
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()

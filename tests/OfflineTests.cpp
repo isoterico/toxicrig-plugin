@@ -293,16 +293,16 @@ int main (int argc, char** argv)
             const auto r = run (p, sine, 64, [&] (int b, ToxicRigProcessor& pp) { if (mover (b, pp)) events.push_back (b * 64); });
             const int total = r.audio.getNumSamples(), from = (int) (0.3 * fs);
             const int before = 64, after = (int) (0.05 * fs), guard = (int) (0.1 * fs);
-            double near = 0, steady = 0; int nearAt = 0;
+            double nearPeak = 0, steady = 0; int nearAt = 0;
             for (int i = std::max (2, from); i < total; ++i)
             {
                 bool inWin = false, inGuard = false;
                 for (int e : events) { if (i >= e - before && i < e + after) inWin = true; if (i >= e - guard && i < e + guard) inGuard = true; }
                 double v = 0;
                 for (int c = 0; c < 2; ++c) { const float* x = r.audio.getReadPointer (c); v = std::max (v, (double) std::abs (x[i] - 2 * x[i - 1] + x[i - 2])); }
-                if (inWin) { if (v > near) { near = v; nearAt = i; } } else if (! inGuard) steady = std::max (steady, v);
+                if (inWin) { if (v > nearPeak) { nearPeak = v; nearAt = i; } } else if (! inGuard) steady = std::max (steady, v);
             }
-            const double ratio = near / std::max (1e-9, steady);
+            const double ratio = nearPeak / std::max (1e-9, steady);
             int off = 0; for (int e : events) if (nearAt >= e - before && nearAt < e + after) off = nearAt - e;
             log ("  " + label.paddedRight (' ', 40) + " " + juce::String ((int) events.size()) + " changes, worst jump " + juce::String (ratio, 2)
                  + "x the steady sound (at +" + juce::String (off * 1000.0 / fs, 1) + " ms)");

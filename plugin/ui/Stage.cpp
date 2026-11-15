@@ -843,7 +843,8 @@ void StageView::resized()
 void StageView::openPedal (int pedal)
 {
     auto o = std::make_unique<PedalOverlay> (proc, pedal);
-    o->onClose = [this] { juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<StageView> (this)] { if (safe) safe->closeOverlay(); }); };
+    juce::Component::SafePointer<StageView> safe (this); // closed asynchronously: the overlay can't delete itself mid-click
+    o->onClose = [safe] { juce::MessageManager::callAsync ([safe] { if (safe != nullptr) safe->closeOverlay(); }); };
     overlay = std::move (o);
     addAndMakeVisible (*overlay);
     overlay->setBounds (getLocalBounds());
@@ -852,7 +853,8 @@ void StageView::openPedal (int pedal)
 void StageView::openCab()
 {
     auto o = std::make_unique<CabOverlay> (proc, amp.getSlot());
-    o->onClose = [this] { juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<StageView> (this)] { if (safe) safe->closeOverlay(); }); };
+    juce::Component::SafePointer<StageView> safe (this); // closed asynchronously: the overlay can't delete itself mid-click
+    o->onClose = [safe] { juce::MessageManager::callAsync ([safe] { if (safe != nullptr) safe->closeOverlay(); }); };
     overlay = std::move (o);
     addAndMakeVisible (*overlay);
     overlay->setBounds (getLocalBounds());
