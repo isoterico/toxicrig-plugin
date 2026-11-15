@@ -1,6 +1,7 @@
-# Builds ToxicRig for Windows (VST3 + Standalone) and macOS (VST3 + AU + Standalone,
-# Universal: Apple Silicon + Intel), runs the offline tests and pluginval,
-# and publishes everything as downloadable "artifacts" on the run page.
+# Builds ToxicRig for Windows (VST3 + Standalone + Setup.exe installer) and macOS
+# (VST3 + AU + Standalone + .pkg installer, Universal: Apple Silicon + Intel),
+# runs the offline tests and pluginval, and publishes everything as downloadable
+# "artifacts" on the run page.
 name: Build ToxicRig
 
 on:
@@ -23,6 +24,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read version
+        shell: bash
+        run: |
+          v=$(sed -n 's/^project(ToxicRig VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          echo "TR_VERSION=$v" >> "$GITHUB_ENV"
+          echo "Version $v"
+
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
@@ -37,27 +45,42 @@ jobs:
         shell: bash
         run: |
           cmake --build build --config Release --target ToxicRigTests --parallel 4
-          exe=$(find build -name "ToxicRigTests" -type f -perm -u+x 2>/dev/null | head -1)
-          [ -z "$exe" ] && exe=$(find build -name "ToxicRigTests.exe" | head -1)
+          exe=$(find build -name "ToxicRigTests.exe" | head -1)
+          [ -z "$exe" ] && exe=$(find build -path "*MacOS*" -name "ToxicRigTests" -type f | head -1)
+          [ -z "$exe" ] && exe=$(find build -name "ToxicRigTests" -type f -perm -u+x | head -1)
           "$exe" test-out || echo "::warning::Some offline tests failed - see report.txt"
 
       - name: Collect files
         shell: bash
         run: |
           mkdir -p dist
-          vst3=$(find build -type d -name "ToxicRig.vst3" | head -1)
+          vst3=$(find build -type d -name "ToxicRig.vst3" -path "*Release*" | head -1)
           cp -R "$vst3" dist/
           if [ "$RUNNER_OS" == "macOS" ]; then
-            au=$(find build -type d -name "ToxicRig.component" | head -1)
-            app=$(find build -type d -name "ToxicRig.app" | head -1)
-            cp -R "$au" dist/
-            cp -R "$app" dist/
+            cp -R "$(find build -type d -name 'ToxicRig.component' | head -1)" dist/
+            cp -R "$(find build -type d -name 'ToxicRig.app' -path '*Standalone*' | head -1)" dist/
             # Ad-hoc signature: required for Apple Silicon to load the plugin at all.
             for b in dist/*.vst3 dist/*.component dist/*.app; do codesign --force --deep -s - "$b"; done
           else
-            exe=$(find build -name "ToxicRig.exe" | head -1)
-            cp "$exe" dist/
+            cp "$(find build -name 'ToxicRig.exe' -path '*Standalone*' | head -1)" dist/
           fi
+
+      - name: Windows installer (Setup.exe)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco upgrade innosetup --no-progress -y   # needs Inno Setup 6.3+ (x64compatible)
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:TR_VERSION" "/DSourceDir=$env:GITHUB_WORKSPACE\dist" installer\windows\ToxicRig.iss
+
+      - name: macOS installer (.pkg)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p pkgs dist-installer
+          pkgbuild --component dist/ToxicRig.vst3 --install-location "/Library/Audio/Plug-Ins/VST3" --identifier it.toxiczone.toxicrig.vst3 --version "$TR_VERSION" pkgs/vst3.pkg
+          pkgbuild --component dist/ToxicRig.component --install-location "/Library/Audio/Plug-Ins/Components" --identifier it.toxiczone.toxicrig.au --version "$TR_VERSION" pkgs/au.pkg
+          pkgbuild --component dist/ToxicRig.app --install-location "/Applications" --identifier it.toxiczone.toxicrig.app --version "$TR_VERSION" pkgs/app.pkg
+          productbuild --distribution installer/mac/distribution.xml --resources installer/mac/resources --package-path pkgs "dist-installer/ToxicRig-Installer-$TR_VERSION.pkg"
 
       - name: Validate with pluginval
         shell: bash
@@ -71,15 +94,21 @@ jobs:
             unzip -q pv.zip
             ./pluginval.exe --strictness-level 5 --validate-in-process --skip-gui-tests dist/ToxicRig.vst3 | tee pluginval.txt || echo "::warning::pluginval reported problems"
           fi
-          cp pluginval.txt dist/ || true
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ToxicRig-${{ matrix.name }}
+          name: ToxicRig-${{ matrix.name }}-INSTALLER
+          path: dist-installer
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ToxicRig-${{ matrix.name }}-file-sciolti
           path: dist
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: TestReport-${{ matrix.name }}
-          path: test-out
+          path: |
+            test-out
+            pluginval.txt

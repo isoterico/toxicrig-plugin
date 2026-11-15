@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(ToxicRig VERSION 0.1.0 LANGUAGES C CXX)
+project(ToxicRig VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -23,6 +23,31 @@ else()
     FetchContent_MakeAvailable(JUCE)
 endif()
 
+# Artwork and fonts compiled into the plugin (no loose files to install).
+juce_add_binary_data(ToxicRigAssets SOURCES
+    assets/stage.jpg
+    assets/amp_british.png
+    assets/amp_american.png
+    assets/amp_modern.png
+    assets/speaker.png
+    assets/mic_dynamic.png
+    assets/mic_ribbon.png
+    assets/mic_condenser.png
+    assets/fonts/Orbitron-ExtraBold.ttf
+    assets/fonts/Rajdhani-SemiBold.ttf
+    assets/fonts/Rajdhani-Bold.ttf
+    assets/fonts/BarlowCondensed-Medium.ttf
+    assets/fonts/Cormorant-SemiBoldItalic.ttf
+    assets/fonts/JetBrainsMono-Medium.ttf
+    assets/fonts/SpaceGrotesk-Bold.ttf)
+set_target_properties(ToxicRigAssets PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+set(TZ_UI_SOURCES
+    plugin/ui/Skin.cpp
+    plugin/ui/Widgets.cpp
+    plugin/ui/Classic.cpp
+    plugin/ui/Stage.cpp)
+
 set(TZ_FORMATS VST3 Standalone)
 if(APPLE)
     list(APPEND TZ_FORMATS AU)
@@ -35,6 +60,7 @@ juce_add_plugin(ToxicRig
     PLUGIN_MANUFACTURER_CODE Txzn
     PLUGIN_CODE TxRg
     PRODUCT_NAME "ToxicRig"
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.png"
     FORMATS ${TZ_FORMATS}
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
@@ -52,7 +78,8 @@ target_sources(ToxicRig PRIVATE
     plugin/Presets.cpp
     plugin/RigEngine.cpp
     plugin/PluginProcessor.cpp
-    plugin/PluginEditor.cpp)
+    plugin/PluginEditor.cpp
+    ${TZ_UI_SOURCES})
 
 target_include_directories(ToxicRig PRIVATE dsp plugin)
 
@@ -64,6 +91,7 @@ target_compile_definitions(ToxicRig PUBLIC
 
 target_link_libraries(ToxicRig
     PRIVATE
+        ToxicRigAssets
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC
@@ -82,11 +110,12 @@ if(TZ_BUILD_TESTS)
         plugin/Presets.cpp
         plugin/RigEngine.cpp
         plugin/PluginProcessor.cpp
-        plugin/PluginEditor.cpp)
+        plugin/PluginEditor.cpp
+        ${TZ_UI_SOURCES})
     target_include_directories(ToxicRigTests PRIVATE dsp plugin)
     target_compile_definitions(ToxicRigTests PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
-        JucePlugin_Name="ToxicRig" JucePlugin_VersionString="0.1.0")
-    target_link_libraries(ToxicRigTests PRIVATE juce::juce_audio_utils juce::juce_dsp
+        JucePlugin_Name="ToxicRig" JucePlugin_VersionString="${PROJECT_VERSION}")
+    target_link_libraries(ToxicRigTests PRIVATE ToxicRigAssets juce::juce_audio_utils juce::juce_dsp
         juce::juce_recommended_config_flags)
 endif()

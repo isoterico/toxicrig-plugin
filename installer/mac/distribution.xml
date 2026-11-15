@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>ToxicRig</title>
+    <organization>it.toxiczone</organization>
+    <background file="background.png" alignment="bottomleft" scaling="none"/>
+    <background-darkAqua file="background.png" alignment="bottomleft" scaling="none"/>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <license file="license_it.txt"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <options customize="allow" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+    <domains enable_localSystem="true"/>
+    <choices-outline>
+        <line choice="vst3"/>
+        <line choice="au"/>
+        <line choice="app"/>
+    </choices-outline>
+    <choice id="vst3" title="Plugin VST3" description="Per Ableton, Reaper, Cubase, Studio One, FL Studio...">
+        <pkg-ref id="it.toxiczone.toxicrig.vst3"/>
+    </choice>
+    <choice id="au" title="Plugin Audio Unit (AU)" description="Per Logic Pro, GarageBand, MainStage.">
+        <pkg-ref id="it.toxiczone.toxicrig.au"/>
+    </choice>
+    <choice id="app" title="Applicazione standalone" description="Per suonare senza DAW.">
+        <pkg-ref id="it.toxiczone.toxicrig.app"/>
+    </choice>
+    <pkg-ref id="it.toxiczone.toxicrig.vst3">vst3.pkg</pkg-ref>
+    <pkg-ref id="it.toxiczone.toxicrig.au">au.pkg</pkg-ref>
+    <pkg-ref id="it.toxiczone.toxicrig.app">app.pkg</pkg-ref>
+</installer-gui-script>

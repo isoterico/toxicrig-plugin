@@ -3,6 +3,7 @@
 #pragma once
 #include "../dsp/tz/Pedals.h"
 #include <juce_core/juce_core.h>
+#include <vector>
 
 namespace rig
 {
@@ -60,6 +61,23 @@ struct Routing
     {
         for (int i = 0; i < numLoop; ++i) if (loop[(size_t) i] == pedal) return true;
         return false;
+    }
+
+    // Move a pedal to position 'index' of the board or the loop. Delay and reverb
+    // always land in the loop (they only make sense after the amp).
+    Routing moved (int pedal, bool toLoop, int index) const
+    {
+        if (pedal == (int) tz::PedalId::Delay || pedal == (int) tz::PedalId::Reverb) toLoop = true;
+        std::vector<int> b, l;
+        for (int i = 0; i < numBoard; ++i) if (board[(size_t) i] != pedal) b.push_back (board[(size_t) i]);
+        for (int i = 0; i < numLoop; ++i) if (loop[(size_t) i] != pedal) l.push_back (loop[(size_t) i]);
+        auto& dst = toLoop ? l : b;
+        index = juce::jlimit (0, (int) dst.size(), index);
+        dst.insert (dst.begin() + index, pedal);
+        Routing r;
+        for (int p : b) r.board[(size_t) r.numBoard++] = p;
+        for (int p : l) r.loop[(size_t) r.numLoop++] = p;
+        return r;
     }
 
     juce::String toString() const { return juce::String::toHexString ((juce::int64) encode()); }

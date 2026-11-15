@@ -44,6 +44,8 @@ public:
     static juce::File userPresetFolder();
     void storeAB (int slot);          // remember current sound in A or B
     void recallAB (int slot);         // switch to it
+    int getSkin() const { return skin.load(); }   // -1 = machine default
+    void setSkin (int s) { skin.store (s); }
     bool hasAB (int slot) const { return abState[(size_t) slot].isValid(); }
     int currentAB = 0;
 
@@ -63,6 +65,7 @@ private:
     std::array<juce::File, 2> userIR;
     std::array<juce::ValueTree, 2> abState;
     int currentProgram = 0;
+    std::atomic<int> skin { -1 };
     double currentRate = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ToxicRigProcessor)

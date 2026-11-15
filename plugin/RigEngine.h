@@ -38,6 +38,13 @@ public:
     std::vector<float> tunerBuffer = std::vector<float> (1 << 15);
     double tunerRate() const { return baseRate / tunerDecim; }
 
+    // Last output samples for the oscilloscope (UI reads, may tear: display only).
+    void copyScope (float* dst, int n) const
+    {
+        const int end = scopePos.load (std::memory_order_relaxed);
+        for (int i = 0; i < n; ++i) dst[i] = scopeBuf[(size_t) ((end - n + i) & (kScope - 1))];
+    }
+
     static constexpr double kInputVolts = 1.5; // 0 dBFS at the interface = 1.5 V peak at the "guitar jack"
 
 private:
@@ -86,5 +93,8 @@ private:
     int tunerDecim = 4, tunerCount = 0;
     double tunerLp1 = 0, tunerLp2 = 0, tunerAcc = 0;
     tz::Biquad dcIn;
+    static constexpr int kScope = 4096;
+    std::array<float, kScope> scopeBuf {};
+    std::atomic<int> scopePos { 0 };
 };
 } // namespace rig

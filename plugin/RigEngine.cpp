@@ -357,6 +357,11 @@ void RigEngine::process (juce::AudioBuffer<float>& buffer, int numInputChannels,
             R[i] = juce::jlimit (-4.0f, 4.0f, r);
             pkL = std::max (pkL, std::abs (L[i])); pkR = std::max (pkR, std::abs (R[i]));
         }
+        {
+            int sp = scopePos.load (std::memory_order_relaxed);
+            for (int i = 0; i < n; ++i) scopeBuf[(size_t) (sp++ & (kScope - 1))] = L[i];
+            scopePos.store (sp, std::memory_order_relaxed);
+        }
         if (bad) { reset(); juce::FloatVectorOperations::clear (L, n); juce::FloatVectorOperations::clear (R, n); }
         if (outR == nullptr) for (int i = 0; i < n; ++i) L[i] = 0.5f * (L[i] + R[i]);
         outPeakL.store (std::max (outPeakL.load(), pkL));

@@ -156,13 +156,32 @@ int main (int argc, char** argv)
             f.deleteFile();
             if (auto os = f.createOutputStream()) png.writeImageToStream (img, *os);
         };
-        save ("ui_amp.png");
-        auto* root = dynamic_cast<ui::Root*> (ed->getChildComponent (0));
-        if (root != nullptr)
+        auto& root = dynamic_cast<ToxicRigEditor&> (*ed).root;
+        const char* names[] = { "toxiclab", "studionoir", "schematic" };
+        for (int sk = 0; sk < 3; ++sk)
         {
-            root->showForSnapshot (ui::ChainStrip::kCab); save ("ui_cab.png");
-            root->showForSnapshot ((int) tz::PedalId::Boost); save ("ui_pedal.png");
+            root.setSkin ((ui::SkinId) sk);
+            save (juce::String ("ui_") + names[sk] + "_main.png");
+            if (auto* st = root.stage())
+            {
+                st->openPedal ((int) tz::PedalId::Delay); save ("ui_toxiclab_pedal.png");
+                st->openCab(); save ("ui_toxiclab_cab.png");
+                st->closeOverlay();
+            }
+            if (auto* cl = root.classic())
+            {
+                cl->select (101); save (juce::String ("ui_") + names[sk] + "_cab.png");
+                cl->select ((int) tz::PedalId::Overdrive); save (juce::String ("ui_") + names[sk] + "_pedal.png");
+            }
         }
+        root.setSkin (ui::SkinId::ToxicLab);
+        // British amp with amp B turned on, to check the knobs follow the artwork.
+        setParam (p, "a_model", 1.0f);
+        root.setSkin (ui::SkinId::ToxicLab);
+        save ("ui_toxiclab_american.png");
+        setParam (p, "a_model", 2.0f);
+        root.setSkin (ui::SkinId::ToxicLab);
+        save ("ui_toxiclab_modern.png");
         return 0;
     }
     log ("=== ToxicRig offline tests ===");

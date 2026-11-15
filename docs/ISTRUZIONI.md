@@ -24,21 +24,28 @@ lascia i file pronti da scaricare.
 4. Su GitHub apri il repository → scheda **Actions**. Parte da sola la build
    "Build ToxicRig" (pallino giallo). Dura ~10-15 minuti la prima volta.
 5. Quando diventa verde, cliccaci → in fondo alla pagina, sezione **Artifacts**:
-   - `ToxicRig-Windows` → contiene `ToxicRig.vst3` (+ `ToxicRig.exe` standalone)
-   - `ToxicRig-macOS` → `ToxicRig.vst3`, `ToxicRig.component` (AU), `ToxicRig.app`
-   - `TestReport-...` → il report dei test fatto direttamente su Windows/Mac
+   - **`ToxicRig-Windows-INSTALLER`** → dentro c'è `ToxicRig-Setup-0.2.0.exe`
+   - **`ToxicRig-macOS-INSTALLER`** → dentro c'è `ToxicRig-Installer-0.2.0.pkg`
+   - `...-file-sciolti` → gli stessi file senza installer (servono solo per debug)
+   - `TestReport-...` → il report dei test eseguito direttamente su Windows e Mac
 
-Ogni volta che faremo modifiche basta `git add . && git commit -m "..." && git push`.
+Ogni volta che faremo modifiche basta `git add . && git commit -m "..." && git push`:
+GitHub ricompila tutto e crea i nuovi installer.
 
-## B. Installare su Windows (FL Studio)
+## B. Installare su Windows
 
-1. Estrai `ToxicRig-Windows.zip`.
-2. Copia la cartella **`ToxicRig.vst3`** (è una cartella, copiala intera) in:
-   `C:\Program Files\Common Files\VST3\`
-   (Windows chiede i permessi di amministratore: conferma.)
-3. FL Studio → **Options → Manage plugins** → **Find more plugins** (o "Start scan").
-   Cerca "ToxicRig" nella lista e metti la stellina per averlo tra i preferiti.
-4. Nel Mixer: seleziona l'insert dove arriva la chitarra → slot effetti → **ToxicRig**.
+1. Estrai lo zip e fai doppio clic su **`ToxicRig-Setup-0.2.0.exe`**.
+2. Windows potrebbe mostrare "Windows ha protetto il PC" (SmartScreen): succede con
+   tutti i programmi non ancora firmati con un certificato digitale. Clicca
+   **Ulteriori informazioni → Esegui comunque**. Per la vendita compreremo il
+   certificato di firma, così l'avviso sparisce.
+3. Segui la procedura: lingua → licenza → componenti (VST3 sempre, Standalone se vuoi
+   suonare anche senza DAW) → **Installa** → **Fine**.
+   Il plugin finisce in `C:\Program Files\Common Files\VST3\`, la cartella dove FL Studio
+   e tutte le DAW cercano i VST3.
+4. FL Studio → **Options → Manage plugins** → **Find more plugins**. Cerca "ToxicRig"
+   e mettilo tra i preferiti con la stellina.
+5. Per disinstallarlo: Impostazioni di Windows → App → App installate → ToxicRig.
 
 ## C. Focusrite + FL Studio senza ritardo
 
@@ -65,18 +72,22 @@ Se senti crepitii: alza il buffer, oppure metti Oversampling su **2x**.
 
 ## D. Mac (Apple Silicon)
 
-1. Copia `ToxicRig.component` in `~/Library/Audio/Plug-Ins/Components/`
-   e `ToxicRig.vst3` in `~/Library/Audio/Plug-Ins/VST3/`.
-2. Il plugin non è ancora firmato con un certificato Apple (costa 99 $/anno, serve per
-   vendere). Per provarlo, nel Terminale:
-   ```
-   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/ToxicRig.component
-   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/ToxicRig.vst3
-   ```
+1. Doppio clic su **`ToxicRig-Installer-0.2.0.pkg`**.
+2. Se macOS dice che non può verificare lo sviluppatore: **tasto destro sul file → Apri
+   → Apri** (oppure Impostazioni di Sistema → Privacy e sicurezza → "Apri comunque").
+   Anche qui serve il certificato Apple (99 $/anno) per la vendita.
+3. Segui la procedura: installa VST3, AU e app (con "Personalizza" scegli cosa).
 
 ## E. Come si usa
 
-- **Striscia in alto** = la catena del suono, da sinistra a destra.
+- **Stile grafico**: ingranaggio ⚙ in alto → Stile grafico (Toxic Lab, Studio Noir,
+  Schematic). Stesse funzioni, cambia solo l'aspetto. Da lì scegli anche la dimensione
+  della finestra; puoi anche trascinare l'angolo in basso a destra.
+- **Toxic Lab**: le manopole dell'ampli si girano direttamente sull'ampli. A destra
+  scegli Ampli A/B, il modello (< >), il canale e il mixer A/B; "CASSA E MICROFONO"
+  apre la cassa. In basso i pedali: clic = si apre in grande, trascina = cambi ordine,
+  clic sul pulsante a pedale = acceso/spento.
+- **Studio Noir / Schematic**: striscia in alto con la catena del suono:
   - Clic su un blocco = lo modifichi sotto.
   - Clic sul **LED** di un pedale = acceso/spento.
   - **Trascina** un pedale per cambiare ordine, o spostalo oltre AMP/CAB per

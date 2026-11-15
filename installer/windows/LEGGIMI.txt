@@ -1,0 +1,21 @@
+TOXICRIG - by ToxicZone
+=======================
+
+DOVE E' STATO INSTALLATO
+- Plugin VST3:   C:\Program Files\Common Files\VST3\ToxicRig.vst3
+- Standalone:    C:\Program Files\ToxicZone\ToxicRig\ToxicRig.exe
+- I tuoi preset: Documenti\ToxicZone\ToxicRig\Presets
+
+FL STUDIO
+1. Options > Manage plugins > Find more plugins.
+2. Cerca "ToxicRig", clicca la stellina per averlo tra i preferiti.
+3. Mixer: seleziona l'insert della chitarra > slot effetti > ToxicRig.
+
+FOCUSRITE (suonare senza ritardo)
+- Chitarra nell'ingresso INST (tasto INST acceso).
+- FL Studio > Options > Audio settings > Device: Focusrite USB ASIO.
+- Show ASIO panel > Buffer 128 samples (64 se il PC regge, 256 se crepita).
+- Nel plugin regola INPUT finche' il meter arriva a circa meta' quando suoni forte.
+
+DISINSTALLARE
+Impostazioni di Windows > App > App installate > ToxicRig > Disinstalla.

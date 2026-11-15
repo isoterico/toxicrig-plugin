@@ -1,0 +1,17 @@
+TOXICRIG - CONTRATTO DI LICENZA PER L'UTENTE FINALE
+
+Copyright (c) 2026 ToxicZone. Tutti i diritti riservati.
+
+1. LICENZA. ToxicZone concede all'acquirente una licenza personale, non esclusiva e non trasferibile per installare e usare ToxicRig sui propri computer, anche per produzioni musicali commerciali. La musica che crei con ToxicRig e' interamente tua.
+
+2. LIMITAZIONI. Non e' consentito: rivendere, noleggiare, distribuire o condividere il software o la licenza; decompilarlo, modificarlo o aggirarne le protezioni; usare i suoi suoni, immagini o impulse response per creare prodotti concorrenti.
+
+3. MARCHI. I nomi di prodotti e marchi di terze parti eventualmente citati appartengono ai rispettivi proprietari e servono solo a descrivere il suono a cui ToxicRig si ispira; non implicano alcuna affiliazione.
+
+4. COMPONENTI DI TERZI. ToxicRig e' realizzato con il framework JUCE (licenza commerciale JUCE). VST e' un marchio di Steinberg Media Technologies GmbH.
+
+5. GARANZIA. Il software e' fornito "cosi' com'e'", senza garanzie di alcun tipo. ToxicZone non e' responsabile di danni derivanti dall'uso del software, inclusi perdita di dati o danni all'apparecchiatura audio. Regola sempre i volumi con attenzione.
+
+6. LEGGE APPLICABILE. Il presente contratto e' regolato dalla legge italiana.
+
+Installando il software accetti queste condizioni.

@@ -95,6 +95,7 @@ juce::ValueTree ToxicRigProcessor::captureState()
     state.setProperty ("irA", userIR[0].getFullPathName(), nullptr);
     state.setProperty ("irB", userIR[1].getFullPathName(), nullptr);
     state.setProperty ("version", JucePlugin_VersionString, nullptr);
+    state.setProperty ("skin", skin.load(), nullptr);
     return state;
 }
 
@@ -109,6 +110,7 @@ void ToxicRigProcessor::restoreState (const juce::ValueTree& tree)
         userIR[(size_t) s] = path.isNotEmpty() && juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
     }
     loadedCab = { -1, -1 }; // the timer reloads IRs on the message thread
+    if (tree.hasProperty ("skin")) skin.store ((int) tree.getProperty ("skin"));
 }
 
 void ToxicRigProcessor::getStateInformation (juce::MemoryBlock& destData)
