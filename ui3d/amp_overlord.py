@@ -98,4 +98,4 @@ text("loop_label", "FX LOOP", 0.0042, (W / 2 - 0.042, pf - 0.0003, PZ - 0.029), 
 marker("ShotPanel", (0, pf, PZ + 0.04), w=W - 0.01, h=PH + UH + 0.03)
 
 export("/home/claude/stage3d/public/models/overlord.json",
-       ["master", "gain", "attack", "bass", "treble", "presence", "resonance"], ["tight"])
+       ["master", "gain", "attack", "bass", "treble", "presence", "resonance"], ["tight"], ["eq%d" % (i + 1) for i in range(8)])

@@ -54,6 +54,17 @@ const Z_AXIS = new THREE.Vector3(0, 0, -1);
 function loadAmp(def, mgr) {
   return new Promise((res, rej) => new GLTFLoader(mgr).load(def.file, (g) => res(processAmp(def, g.scene)), undefined, rej));
 }
+function applyAO(root, url) {
+  const ao = new THREE.TextureLoader().load(url); ao.flipY = false; ao.channel = 1; ao.colorSpace = THREE.NoColorSpace;
+  const cache = new Map();
+  root.traverse((o) => {
+    if (!o.isMesh || !o.geometry.attributes.uv1) return;
+    const m = o.material;
+    if (!cache.has(m)) { const c = m.clone(); c.aoMap = ao; c.aoMapIntensity = 1.0; cache.set(m, c);
+      const g = root.userData.amp?.glowMats.find((x) => x.m === m); if (g) g.m = c; }
+    o.material = cache.get(m);
+  });
+}
 // Vapor-30 screen: neon logo whose rings breathe with the VAPOR amount (redrawn ~30 fps).
 function screenMaterial(a) {
   const c = document.createElement("canvas"); c.width = 512; c.height = 288; const g = c.getContext("2d");
@@ -80,6 +91,7 @@ function screenMaterial(a) {
 }
 function processAmp(def, root) {
   const a = { def, root, knobs: {}, toggles: {}, sliders: {}, speakers: [], glowMats: [] };
+  root.userData.amp = a;
   // Tubes and lit parts get their own material copies, tinted with this amp's colour,
   // so power/standby and the heater flicker act on this amp only.
   const tint = new THREE.Color(def.tube);
@@ -99,6 +111,8 @@ function processAmp(def, root) {
       if (o.material.alphaTest > 0 || o.material.transparent) o.castShadow = false;
     }
   });
+  // Baked ambient occlusion (second UV set): soft darkening in every crevice.
+  applyAO(root, def.file.replace(".json", "_ao.jpg"));
   for (const c of def.knobs) {
     const obj = root.getObjectByName(c.id + "_cap");
     a.knobs[c.id] = { obj, q0: obj.quaternion.clone(), label: c.label };
@@ -267,7 +281,12 @@ function rebuildCables() {
     for (let i = 0; i + 1 < loop.length; i++) cable(jackPos(loop[i], 1), jackPos(loop[i + 1], -1), cableMat, { da: jackDir(loop[i], 1), db: jackDir(loop[i + 1], -1), la: 0.006, lb: 0.006, arc: 0.03 });
     cable(jackPos(loop[loop.length - 1], 1), ampLoop.clone().add(new THREE.Vector3(0, -0.007, 0)), cableMatV, { da: jackDir(loop[loop.length - 1], 1), db: FRONT, la: 0.05, lb: 0.09, floor: -0.006, sag: 0.3, midZ: BOARD.z - BOARD.d / 2 - 0.1 });
   }
-  if (micCable) cable(micCable.a, micCable.b, cableMat, { da: new THREE.Vector3(0, -0.3, 1), db: new THREE.Vector3(1, 0, 0), la: 0.06, lb: 0.1, floor: -0.006, sag: 0.4 });
+  if (micCable) {
+    // XLR: follows the stand, then lies on the floor towards the side of the stage.
+    const pts = [...micCable.route, micCable.route[micCable.route.length - 1].clone().add(new THREE.Vector3(0.5 * micCable.side, 0, 0.25)), micCable.route[micCable.route.length - 1].clone().add(new THREE.Vector3(1.4 * micCable.side, 0, 0.1))];
+    pts.forEach((p, i) => { if (i >= pts.length - 3) p.y = -0.008; });
+    const m = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, false, "centripetal"), 140, 0.0032, 10, false), cableMat); m.castShadow = true; cables.add(m);
+  }
 }
 
 // ------------------------------------------------------------------ cab + microphone
@@ -278,7 +297,7 @@ function placeMic() {
   const spk = amp.speakers[0];
   const front = amp.cab.p.z;
   const r = micRig.place(cabState.mic, spk, front, cabState.pos, cabState.dist);
-  micCable = { a: r.back, b: new THREE.Vector3(spk.x + (spk.x <= 0 ? -0.9 : 0.9), -0.004, r.tip.z + 0.3) };
+  micCable = { route: r.route, side: spk.x <= 0 ? -1 : 1 };
 }
 
 // ------------------------------------------------------------------ camera shots
@@ -298,13 +317,14 @@ function shotSpec(name, arg) {
     const side = s.x <= 0 ? -1 : 1;
     return { tgt: new THREE.Vector3(s.x, s.y, amp.cab.p.z + 0.06), theta: -side * 0.38, phi: Math.PI / 2 - 0.1, box: [0.5, 0.42], ap: 0.01, panel: true };
   }
+  if (name === "board") return { tgt: new THREE.Vector3(BOARD.x, BOARD_TOP + 0.03, BOARD.z + 0.02), theta: -0.12, phi: 0.82, box: [BOARD.w + 0.08, BOARD.d + 0.12], ap: 0.006 };
   if (name === "pedal") { const st = PEDAL[arg], p = st.grp.position; return { tgt: new THREE.Vector3(p.x, BOARD_TOP + PH, p.z + 0.004), theta: 0, phi: 0.66, box: [Math.max(st.def.w + 0.04, 0.11), (st.def.d || PD) + 0.035], ap: 0.016, panel: true }; }
 }
 function resolveShot(spec) {
   const vfov = THREE.MathUtils.degToRad(camera.fov), aspect = innerWidth / innerHeight;
   const hfov = 2 * Math.atan(Math.tan(vfov / 2) * aspect);
   let uW = 1, uH = 1; const wideScreen = innerWidth >= 820;
-  if (spec.panel) { if (wideScreen) uW = 1 - 390 / innerWidth; else uH = 0.5; }
+  if (spec.panel) { uH = 0.8; }
   let r;
   if (spec.sphere) r = spec.sphere / Math.sin(Math.min(vfov, hfov) / 2);
   else { const [bw, bh] = spec.box; r = Math.max((bh / 2) / Math.tan(vfov / 2) / uH, (bw / 2) / Math.tan(hfov / 2) / uW) * 1.04; }
@@ -313,7 +333,7 @@ function resolveShot(spec) {
     const off = new THREE.Vector3().setFromSpherical(new THREE.Spherical(r, spec.phi, spec.theta));
     const fwd = off.clone().negate().normalize(), right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize(), upv = new THREE.Vector3().crossVectors(right, fwd).normalize();
     const visW = 2 * Math.tan(hfov / 2) * r, visH = 2 * Math.tan(vfov / 2) * r;
-    if (wideScreen) tgt.addScaledVector(right, visW * (1 - uW) / 2); else tgt.addScaledVector(upv, -visH * (1 - uH) / 2);
+    tgt.addScaledVector(upv, -visH * (1 - uH) / 2);
   }
   return { tgt, sph: new THREE.Spherical(r, spec.phi, spec.theta), ap: spec.ap, focus: spec.tgt.clone() };
 }
@@ -324,7 +344,7 @@ function goShot(name, arg, instant) {
   if (instant || REDUCED) { cam.tgt.copy(to.tgt); cam.sph.copy(to.sph); focusPoint.copy(to.focus); aperture = to.ap; shotAnim = null; return; }
   const far = Math.abs(to.sph.theta - cam.sph.theta) + Math.abs(to.sph.phi - cam.sph.phi);
   shotAnim = { from: { tgt: cam.tgt.clone(), sph: cam.sph.clone(), focus: focusPoint.clone(), ap: aperture }, to, t0: performance.now(), dur: 1250 + far * 500 };
-  document.body.dataset.shot = name;
+  document.body.dataset.shot = name; syncDock();
 }
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 function updateCamera(now) {
@@ -378,7 +398,7 @@ canvas.addEventListener("pointerdown", (e) => {
     drag = { c, y: e.clientY, v0: PEDAL[c.pedal].values[c.param] }; canvas.setPointerCapture(e.pointerId); e.preventDefault(); showValue(c, e);
   } else if (shot.name === "cab" && (c?.kind === "mic" || (hit && zoneOf(hit) === "cab"))) {
     drag = { c: { kind: "micDrag" }, x: e.clientX, y: e.clientY, p0: cabState.pos, d0: cabState.dist }; canvas.setPointerCapture(e.pointerId);
-  } else if (shot.name === "wide" && hit?.object.userData.pedalId) {
+  } else if ((shot.name === "wide" || shot.name === "board") && hit?.object.userData.pedalId) {
     dragging = { st: PEDAL[hit.object.userData.pedalId], armed: true, pointerId: e.pointerId };
   }
 });
@@ -401,7 +421,7 @@ canvas.addEventListener("pointermove", (e) => {
   }
   if (!amp || shotAnim) return;
   const hit = pick(e), c = hit?.object.userData.ctl; let cur = "default";
-  if (shot.name === "wide" && hit) cur = hit.object.userData.pedalId ? "grab" : (c?.kind === "addSlot" ? "pointer" : "zoom-in");
+  if ((shot.name === "wide" || shot.name === "board") && hit) cur = hit.object.userData.pedalId ? "grab" : (c?.kind === "addSlot" ? "pointer" : "zoom-in");
   else if (shot.name === "cab" && hit && (c?.kind === "mic" || zoneOf(hit) === "cab")) cur = "move";
   else if (c && (c.kind === "ampKnob" || c.kind === "ampSlider" || c.kind === "pedalCtl")) cur = c.kind === "pedalCtl" && PEDAL[c.pedal].ctl[c.param].kind === "bool" ? "pointer" : "ns-resize";
   else if (c && (c.kind === "ampToggle" || c.kind === "footswitch" || c.kind === "addSlot")) cur = "pointer";
@@ -443,7 +463,7 @@ function showValue(c, e) {
 }
 function click(e, hit) {
   const c = hit?.object.userData.ctl;
-  if (shot.name === "wide") {
+  if (shot.name === "wide" || shot.name === "board") {
     if (c?.kind === "addSlot") return openPedalCatalog(c.row);
     if (hit?.object.userData.pedalId) return openPedal(hit.object.userData.pedalId);
     if (hit && (isAmpObj(hit.object) || c?.kind === "mic")) return zoneOf(hit) === "cab" ? openCab() : openAmp();
@@ -483,7 +503,7 @@ function dropPedal(st) {
   const idx = chain[row].map((id) => PEDAL[id].grp.position.x).filter((x) => x < p.x).length;
   if (rowLayout(row, [...chain[row], st.def.id]).free < -0.001) { from.splice(st.index, 0, st.def.id); say("Quella fila è piena: sposta prima un altro pedale."); }
   else chain[row].splice(idx, 0, st.def.id);
-  layoutChain(); setHint("wide");
+  layoutChain(); setHint(shot.name === "board" ? "board" : "wide");
 }
 
 // ------------------------------------------------------------------ UI flow
@@ -491,21 +511,20 @@ const HINTS = {
   empty: "Il palco è vuoto: scegli l'amplificatore.",
   wide: "Tocca la testata, la cassa o un pedale per avvicinarti. Trascina i pedali per cambiare l'ordine della catena.",
   drag: "Rilascia il pedale dove vuoi: fila davanti = prima dell'ampli, fila dietro = loop FX.",
+  board: "Trascina un pedale per cambiarne il posto nella catena · toccalo per avvicinarti · + per aggiungerne uno",
   amp: "Trascina su/giù le manopole (o rotella) · doppio clic = valore iniziale · tocca BRIGHT e CHANNEL · Esc per allontanarti",
 };
 function setHint(k) { $("#hint").textContent = HINTS[k] || ""; }
 function say(t) { const el = $("#toast"); el.textContent = t; el.classList.add("on"); clearTimeout(say.t); say.t = setTimeout(() => el.classList.remove("on"), 2800); }
-function openAmp() { if (!amp) return; closePanel(); goShot("amp"); setHint("amp"); }
+function openAmp() { if (!amp) return; clearHud(); goShot("amp"); setHint("amp"); showTitle(amp.def.name, amp.def.tags.join("  ·  ")); }
 function back() { closePanel(); goShot("wide"); setHint("wide"); }
 addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if ($("#cat").classList.contains("open")) return $("#cat").classList.remove("open");
   if (shot && shot.name !== "wide" && shot.name !== "empty") back();
 });
-$("#back").addEventListener("click", back);
 $("#cat").addEventListener("click", (e) => { if (e.target.id === "cat") $("#cat").classList.remove("open"); });
 $("#cta").addEventListener("click", openAmpCatalog);
-$("#changeAmp").addEventListener("click", openAmpCatalog);
 
 const thumbs = {};
 function openAmpCatalog() {
@@ -513,12 +532,11 @@ function openAmpCatalog() {
   $("#catTitle").textContent = "Scegli l'amplificatore";
   $("#catSub").textContent = "Ogni ampli è un modello 3D con gli stessi comandi del plugin. Le manopole restano dove le hai lasciate quando cambi ampli.";
   for (const a of AMPS) {
-    const el = document.createElement("article"); el.className = "card";
-    const on = amp?.def.id === a.id;
+    const el = document.createElement("article"); const on = amp?.def.id === a.id; el.className = "card" + (on ? " off" : "");
     el.innerHTML = `<div class="pic">${thumbs[a.id] ? `<img alt="" src="${thumbs[a.id]}">` : `<span class="soon">Carico il modello…</span>`}</div>
       <div class="txt"><h3>${a.name}</h3><div class="tags">${a.tags.map((t) => `<span>${t}</span>`).join("")}</div>
-      <ul>${a.text.map((t) => `<li>${t}</li>`).join("")}</ul><button ${on ? "disabled" : ""}>${on ? "Sul palco" : "Mettilo sul palco"}</button></div>`;
-    el.querySelector("button").addEventListener("click", () => { $("#cat").classList.remove("open"); placeAmp(a.id); });
+      ${a.text.map((t) => `<p>${t}</p>`).join("")}<div class="state">${on ? "SUL PALCO" : "TOCCA PER METTERLO SUL PALCO ▸"}</div></div>`;
+    if (!on) el.addEventListener("click", () => { $("#cat").classList.remove("open"); placeAmp(a.id); });
     box.appendChild(el);
   }
   $("#cat").classList.add("open");
@@ -557,11 +575,11 @@ function openPedalCatalog(row) {
   $("#catSub").textContent = row === "pre" ? "Prima dell'ampli: cambia quanto e come satura." : "Dopo il preamp: modulazioni, delay e riverbero restano puliti anche col gain alto.";
   const used = new Set([...chain.pre, ...chain.loop]);
   for (const d of PEDALS) {
-    const el = document.createElement("article"); el.className = "card"; const inUse = used.has(d.id);
+    const inUse = used.has(d.id), el = document.createElement("article"); el.className = "card" + (inUse ? " off" : "");
     el.innerHTML = `<div class="pic"><img alt="" src="${pedalThumb(d.id)}"></div>
       <div class="txt"><h3>${d.name}</h3><div class="tags">${d.params.map((q) => `<span>${q.name}</span>`).join("")}</div>
-      <ul><li>${d.desc}</li></ul><button ${inUse ? "disabled" : ""}>${inUse ? "Già sulla pedaliera" : "Aggiungi"}</button></div>`;
-    if (!inUse) el.querySelector("button").addEventListener("click", () => { $("#cat").classList.remove("open"); addPedal(d.id, catRow); });
+      <p>${d.desc}</p><div class="state">${inUse ? "GIÀ SULLA PEDALIERA" : "TOCCA PER AGGIUNGERLO ▸"}</div></div>`;
+    if (!inUse) el.addEventListener("click", () => { $("#cat").classList.remove("open"); addPedal(d.id, catRow); });
     box.appendChild(el);
   }
   $("#cat").classList.add("open");
@@ -573,76 +591,124 @@ function addPedal(id, row) {
   chain[row].push(id); layoutChain(); setTimeout(() => openPedal(id), 480);
 }
 
-// Side/bottom panel
-const panel = $("#panel");
-function closePanel() { panel.classList.remove("open"); delete panel.dataset.pedal; delete panel.dataset.cab; }
-function openPedal(id) { goShot("pedal", id); panel.dataset.pedal = id; delete panel.dataset.cab; panel.classList.add("open"); refreshPanel(true); }
-function refreshPanel(rebuild) {
-  const id = panel.dataset.pedal; if (!id) return;
-  const st = PEDAL[id], d = st.def;
-  if (rebuild) {
-    panel.innerHTML = `<div class="ph"><div><h2>${d.name}</h2><small></small></div><button class="x" aria-label="Chiudi">✕</button></div>
-      <p>${d.desc}</p><button class="onoff"></button>
-      <div class="params">${d.params.map((q) => `<div class="pr" data-p="${q.id}"><span>${q.name}</span><b></b></div>`).join("")}</div>
-      <div class="order"><button data-a="left">◀ Prima</button><button data-a="right">Dopo ▶</button><button data-a="row"></button><button data-a="remove" class="danger">Rimuovi</button></div>
-      <p class="note">Gira le manopole sul pedale (trascina su/giù o rotella). Il footswitch lo accende e lo spegne.</p>`;
-    panel.querySelector(".x").addEventListener("click", back);
-    panel.querySelector(".onoff").addEventListener("click", () => { st.on = !st.on; PF.apply(st); refreshPanel(); });
-    panel.querySelectorAll(".order button").forEach((b) => b.addEventListener("click", () => reorder(id, b.dataset.a)));
+// ------------------------------------------------------------------ in-scene HUD
+// No side menus: controls live on the objects. Small glass chips are pinned to 3D points
+// (projected every frame), arrows sit beside the pedal, the dock at the bottom navigates.
+const hud = $("#hud"), titleEl = $("#title"), dock = $("#dock"), tray = $("#tray");
+let anchors = [];
+const ICON = {
+  left: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
+  right: '<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
+  swap: '<svg viewBox="0 0 24 24"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg>',
+  trash: '<svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg>',
+  power: '<svg viewBox="0 0 24 24"><path d="M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>',
+  upload: '<svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>',
+};
+function clearHud() { hud.innerHTML = ""; anchors = []; titleEl.classList.remove("on"); tray.classList.remove("on"); tray.innerHTML = ""; delete hud.dataset.pedal; }
+function pin(el, getPoint, dx = 0, dy = 0) { hud.appendChild(el); anchors.push({ el, getPoint, dx, dy }); return el; }
+function updateAnchors() {
+  const v = new THREE.Vector3();
+  for (const a of anchors) {
+    v.copy(a.getPoint()).project(camera);
+    const x = (v.x + 1) / 2 * innerWidth + a.dx, y = (1 - v.y) / 2 * innerHeight + a.dy;
+    a.el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+    a.el.style.opacity = shotAnim ? 0 : 1;
   }
-  panel.querySelector(".onoff").textContent = st.on ? "● ACCESO" : "○ SPENTO (bypass)";
-  panel.querySelector(".onoff").classList.toggle("on", st.on);
-  for (const q of d.params) panel.querySelector(`[data-p="${q.id}"] b`).textContent = fmt(q, toValue(q, st.values[q.id]));
-  panel.querySelector('[data-a="row"]').textContent = st.row === "pre" ? "Sposta nel loop FX" : "Sposta in ingresso";
-  panel.querySelector('[data-a="left"]').disabled = st.index === 0;
-  panel.querySelector('[data-a="right"]').disabled = st.index === chain[st.row].length - 1;
-  panel.querySelector("small").textContent = `${st.row === "pre" ? "Ingresso (prima dell'ampli)" : "Loop FX (dopo il preamp)"} · posizione ${st.index + 1} di ${chain[st.row].length}`;
 }
+function showTitle(name, sub) { titleEl.innerHTML = `<b>${name}</b><span>${sub}</span>`; titleEl.classList.add("on"); }
+const chip = (cls, html) => { const d = document.createElement("div"); d.className = "chip " + cls; d.innerHTML = html; return d; };
+const ibtn = (icon, label, cls = "") => { const b = document.createElement("button"); b.className = "ibtn " + cls; b.innerHTML = ICON[icon] + (label ? `<span>${label}</span>` : ""); b.setAttribute("aria-label", label || icon); return b; };
+
+function openPedal(id) { goShot("pedal", id); buildPedalHud(id); }
+function buildPedalHud(id) {
+  clearHud(); hud.dataset.pedal = id;
+  const st = PEDAL[id], d = st.def, wp = () => st.grp.getWorldPosition(new THREE.Vector3());
+  showTitle(d.name, d.desc);
+  const halfW = d.w / 2 + 0.024, D = d.d || PD;
+  const L = pin(ibtn("left", "", "round"), () => wp().add(new THREE.Vector3(-halfW, BOARD_TOP + 0.03, 0)));
+  const R = pin(ibtn("right", "", "round"), () => wp().add(new THREE.Vector3(halfW, BOARD_TOP + 0.03, 0)));
+  L.title = "Sposta prima nella catena"; R.title = "Sposta dopo nella catena";
+  L.onclick = () => reorder(id, "left"); R.onclick = () => reorder(id, "right");
+  // Value chips under every control: tap a switch chip to flip it.
+  for (const q of d.params) {
+    const c = st.ctl[q.id]; if (!c) continue;
+    const el = pin(chip("val", ""), () => c.obj.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0, -0.016)), 0, -26);
+    el.dataset.p = q.id;
+    if (q.isBool || q.choices) { el.classList.add("tap"); el.onclick = () => { const k = q.choices ? q.choices.length - 1 : 1; st.values[q.id] = (Math.round(st.values[q.id] * k) + 1) % (k + 1) / k; PF.apply(st); refreshHud(); }; }
+  }
+  // Under the pedal: position in the chain, move between rows, remove.
+  const bar = pin(document.createElement("div"), () => wp().add(new THREE.Vector3(0, BOARD_TOP, D / 2 + 0.03)));
+  bar.className = "hudbar";
+  const where = document.createElement("span"); where.className = "where"; bar.appendChild(where);
+  const sw = ibtn("swap", "", ""); sw.onclick = () => reorder(id, "row"); bar.appendChild(sw);
+  const pw = ibtn("power", "", "pw"); pw.onclick = () => { st.on = !st.on; PF.apply(st); refreshHud(); }; bar.appendChild(pw);
+  const rm = ibtn("trash", "", "danger"); rm.title = "Togli dalla pedaliera"; rm.onclick = () => reorder(id, "remove"); bar.appendChild(rm);
+  refreshHud();
+}
+function refreshHud() {
+  const id = hud.dataset.pedal; if (!id) return;
+  const st = PEDAL[id], d = st.def;
+  for (const q of d.params) { const el = hud.querySelector(`[data-p="${q.id}"]`); if (el) el.innerHTML = `<i>${q.name}</i>${fmt(q, toValue(q, st.values[q.id]))}`; }
+  const arr = chain[st.row];
+  hud.querySelector(".where").innerHTML = `<b>${st.row === "pre" ? "INGRESSO" : "LOOP FX"}</b> ${st.index + 1}/${arr.length}`;
+  const sw = hud.querySelector(".hudbar .ibtn:not(.pw):not(.danger)"); sw.innerHTML = ICON.swap + `<span>${st.row === "pre" ? "Loop FX" : "Ingresso"}</span>`;
+  hud.querySelector(".pw").classList.toggle("on", st.on); hud.querySelector(".pw").innerHTML = ICON.power + `<span>${st.on ? "Acceso" : "Bypass"}</span>`;
+  const btns = hud.querySelectorAll(".ibtn.round"); btns[0].disabled = st.index === 0; btns[1].disabled = st.index === arr.length - 1;
+}
+const refreshPanel = refreshHud;
+function closePanel() { clearHud(); }
 function reorder(id, a) {
   const st = PEDAL[id], arr = chain[st.row], i = arr.indexOf(id);
   if (a === "left" && i > 0) { arr.splice(i, 1); arr.splice(i - 1, 0, id); }
   else if (a === "right" && i < arr.length - 1) { arr.splice(i, 1); arr.splice(i + 1, 0, id); }
   else if (a === "row") { const to = st.row === "pre" ? "loop" : "pre"; if (to === "pre" && LOOP_ONLY.has(id)) return say(st.def.name + " lavora solo nel loop FX, dopo l'ampli."); if (rowLayout(to, [...chain[to], id]).free < -0.001) return say("L'altra fila è piena."); arr.splice(i, 1); chain[to].push(id); }
   else if (a === "remove") { arr.splice(i, 1); boardGroup.remove(st.grp); layoutChain(); back(); return; }
-  layoutChain();
-  setTimeout(() => { if (panel.dataset.pedal === id) { goShot("pedal", id); refreshPanel(); } }, 580);
-  refreshPanel();
+  layoutChain(); refreshHud();
+  // The camera follows the pedal to its new place.
+  setTimeout(() => { if (hud.dataset.pedal === id) goShot("pedal", id); }, 580);
 }
 function openCab() {
   if (!amp) return;
-  goShot("cab"); panel.dataset.cab = "1"; delete panel.dataset.pedal; panel.classList.add("open");
-  panel.innerHTML = `<div class="ph"><div><h2>Cassa e microfono</h2><small>${amp.def.name}</small></div><button class="x" aria-label="Chiudi">✕</button></div>
-    <p>Trascina il microfono: <b>destra/sinistra</b> = dal centro del cono al bordo (più brillante al centro, più scuro al bordo), <b>su/giù</b> o rotella = distanza dalla tela.</p>
-    <button class="onoff" data-k="on"></button>
-    <div class="seg" data-k="mic">${MICS.map((m) => `<button data-v="${m.id}">${m.name}</button>`).join("")}</div>
-    <p class="note" data-k="micText"></p>
-    <label class="field">Posizione <input type="range" min="0" max="1" step="0.01" data-k="pos"><b data-k="posv"></b></label>
-    <label class="field">Distanza <input type="range" min="0" max="1" step="0.01" data-k="dist"><b data-k="distv"></b></label>
-    <label class="field">Risposta cassa <select data-k="type">${CABS.map((c, i) => `<option value="${i}">${c}</option>`).join("")}</select></label>
-    <label class="field ir">File IR (.wav) <input type="file" accept=".wav,audio/wav" data-k="ir"></label>
-    <p class="note" data-k="irName"></p>`;
-  panel.querySelector(".x").addEventListener("click", back);
-  panel.querySelector('[data-k="on"]').addEventListener("click", () => { cabState.on = !cabState.on; refreshCabPanel(); });
-  panel.querySelectorAll('[data-k="mic"] button').forEach((b) => b.addEventListener("click", () => { cabState.mic = b.dataset.v; placeMic(); rebuildCables(); refreshCabPanel(); }));
-  panel.querySelector('[data-k="pos"]').addEventListener("input", (e) => { cabState.pos = +e.target.value; placeMic(); rebuildCables(); refreshCabPanel(); });
-  panel.querySelector('[data-k="dist"]').addEventListener("input", (e) => { cabState.dist = +e.target.value; placeMic(); rebuildCables(); refreshCabPanel(); });
-  panel.querySelector('[data-k="type"]').addEventListener("change", (e) => { cabState.type = +e.target.value; refreshCabPanel(); });
-  panel.querySelector('[data-k="ir"]').addEventListener("change", (e) => { const f = e.target.files[0]; if (f) { cabState.ir = f.name; cabState.type = 3; refreshCabPanel(); } });
+  goShot("cab"); clearHud();
+  showTitle("Cassa e microfono", "Trascina il microfono: destra/sinistra = dal centro al bordo del cono · su/giù o rotella = distanza");
+  const read = pin(chip("val mic", ""), () => micRig.mics[cabState.mic].getWorldPosition(new THREE.Vector3()), 0, -46); read.id = "micRead";
+  tray.innerHTML = `<div class="mics">${MICS.map((m) => `<button class="micbtn" data-v="${m.id}"><img alt="" src="${micThumb(m.id)}"><span>${m.name}</span></button>`).join("")}</div>
+    <div class="sep"></div>
+    <label class="sel"><i>Risposta</i><select data-k="type">${CABS.map((c, i) => `<option value="${i}">${c}</option>`).join("")}</select></label>
+    <label class="ibtn up" data-k="irw">${ICON.upload}<span>IR .wav</span><input type="file" accept=".wav,audio/wav" data-k="ir" hidden></label>
+    <button class="ibtn pw" data-k="on">${ICON.power}<span></span></button>`;
+  tray.classList.add("on");
+  tray.querySelectorAll(".micbtn").forEach((b) => b.addEventListener("click", () => { cabState.mic = b.dataset.v; placeMic(); rebuildCables(); refreshCabPanel(); }));
+  tray.querySelector('[data-k="type"]').addEventListener("change", (e) => { cabState.type = +e.target.value; refreshCabPanel(); });
+  tray.querySelector('[data-k="ir"]').addEventListener("change", (e) => { const f = e.target.files[0]; if (f) { cabState.ir = f.name; cabState.type = 3; refreshCabPanel(); say("IR caricato: " + f.name); } });
+  tray.querySelector('[data-k="on"]').addEventListener("click", () => { cabState.on = !cabState.on; refreshCabPanel(); });
   refreshCabPanel();
 }
 function refreshCabPanel() {
-  if (!panel.dataset.cab) return;
-  const q = (k) => panel.querySelector(`[data-k="${k}"]`);
-  q("on").textContent = cabState.on ? "● CASSA ATTIVA" : "○ CASSA SPENTA (solo testata, per IR esterni)"; q("on").classList.toggle("on", cabState.on);
-  panel.querySelectorAll('[data-k="mic"] button').forEach((b) => b.classList.toggle("sel", b.dataset.v === cabState.mic));
-  q("micText").textContent = MICS.find((m) => m.id === cabState.mic).text;
-  q("pos").value = cabState.pos; q("dist").value = cabState.dist;
-  q("posv").textContent = cabState.pos < 0.08 ? "centro" : cabState.pos > 0.92 ? "bordo" : Math.round(cabState.pos * 100) + "%";
-  q("distv").textContent = micCm() + " cm";
-  q("type").value = cabState.type;
-  panel.querySelector(".ir").style.display = cabState.type === 3 ? "" : "none";
-  q("irName").textContent = cabState.type === 3 ? (cabState.ir ? "IR caricato: " + cabState.ir : "Nessun IR caricato: scegli un file .wav.") : "";
+  const r = $("#micRead");
+  if (r) r.innerHTML = `<i>${MICS.find((m) => m.id === cabState.mic).name}</i>${cabState.pos < 0.08 ? "centro" : cabState.pos > 0.92 ? "bordo" : Math.round(cabState.pos * 100) + "%"} · ${micCm()} cm`;
+  tray.querySelectorAll(".micbtn").forEach((b) => b.classList.toggle("sel", b.dataset.v === cabState.mic));
+  const t = tray.querySelector('[data-k="type"]'); if (t) t.value = cabState.type;
+  const on = tray.querySelector('[data-k="on"]'); if (on) { on.classList.toggle("on", cabState.on); on.querySelector("span").textContent = cabState.on ? "Cassa ON" : "Cassa OFF"; }
 }
+function micThumb(id) {
+  if (thumbs["m_" + id]) return thumbs["m_" + id];
+  const m = micRig.mics[id], vis = m.visible; m.visible = true;
+  const c = m.userData.vertical ? new THREE.Vector3(0, -0.04, 0.028) : new THREE.Vector3(0, 0, m.userData.len / 2);
+  const url = snapshot(m, c, m.userData.vertical ? 0.42 : 0.36, 1.2, 0.9);
+  m.visible = vis; return (thumbs["m_" + id] = url);
+}
+
+// Dock: the four places of the stage, always one tap away.
+function buildDock() {
+  const items = [["wide", "Palco"], ["amp", "Ampli"], ["cab", "Cassa"], ["board", "Pedaliera"]];
+  dock.innerHTML = items.map(([k, l]) => `<button data-k="${k}"><span class="dot"></span>${l}</button>`).join("") + `<button data-k="cat" class="alt">Cambia ampli</button>`;
+  dock.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+    const k = b.dataset.k;
+    if (k === "wide") back(); else if (k === "amp") openAmp(); else if (k === "cab") openCab(); else if (k === "board") { clearHud(); goShot("board"); setHint("board"); } else openAmpCatalog();
+  }));
+}
+function syncDock() { dock.querySelectorAll("button").forEach((b) => b.classList.toggle("on", shot && (b.dataset.k === shot.name || (b.dataset.k === "board" && shot.name === "pedal")))); }
 
 // ------------------------------------------------------------------ thumbnails
 let thumbR;
@@ -719,6 +785,7 @@ function frame(now) {
   }
   stage.update(t);
   updateCamera(now);
+  updateAnchors();
   stage.composer.render();
 }
 
@@ -727,7 +794,7 @@ manager.onLoad = async () => {
   if (manager.started) return; manager.started = true;
   await Promise.all([...document.fonts].map((f) => f.load().catch(() => {})));
   for (const k of ["pre", "loop"]) { const m = addSlots[k].children[0].material; m.map.dispose(); m.map = plusTexture(k); m.needsUpdate = true; }
-  applyQuality();
+  applyQuality(); buildDock();
   goShot("empty", null, true); document.body.dataset.shot = "empty"; setHint("empty");
   $("#loading").style.opacity = 0; setTimeout(() => $("#loading")?.remove(), 600);
   requestAnimationFrame(frame);
@@ -737,6 +804,12 @@ manager.onLoad = async () => {
   const auto = location.hash.match(/#auto(?:=(\w+))?/); if (auto) placeAmp(auto[1] || "british30");
 };
 loadAmp(AMPS[0], manager);
+// Props: guitar on its stand, road case, monitor wedge, drum kit.
+new GLTFLoader(manager).load("models/props.json", (g) => {
+  g.scene.traverse((o) => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; const m = M[o.material.name]; if (m) o.material = m; } });
+  applyAO(g.scene, "models/props_ao.jpg");
+  scene.add(g.scene);
+});
 
 window.__rig = { setPass: (k, v) => { stage[k].enabled = v; }, placeAmp, goShot, openPedal, openAmp, openCab, back, chain, PEDAL, addPedal, reorder, ampVals, cabState, placeMic,
   screenOf: (o) => { const v = new THREE.Vector3(); o.getWorldPosition(v); v.project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; },

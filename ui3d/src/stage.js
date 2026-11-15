@@ -7,6 +7,8 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
+import studioHdr from "@pmndrs/assets/hdri/studio.exr.js";
 
 export function buildStage(renderer, scene, camera, tex, M) {
   scene.background = new THREE.Color(0x040406);
@@ -22,9 +24,26 @@ export function buildStage(renderer, scene, camera, tex, M) {
   panel(4.0, 0.12, bm(0.35, 2.2, 0.25), [-2.8, 1.2, -2.4], [0, 0.5, 0]);// green strip
   panel(0.5, 0.5, bm(2.5, 2.4, 2.2), [0.6, 4.2, 0.8], [0, 0, 0]);       // top par
   panel(8, 0.3, bm(0.25, 0.22, 0.2), [0, 0.15, 4], [0, 0.4, 0]);        // faint front fill
+  // A real photographed studio (CC0 HDRI) gives every reflection real-world detail:
+  // softbox highlights, stands, dark walls. Our coloured neon strips are added on top.
   const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(env, 0.02).texture;
-  scene.environmentIntensity = 0.55;
+  const buildEnv = (hdr) => {
+    if (hdr) {
+      hdr.mapping = THREE.EquirectangularReflectionMapping;
+      const sky = new THREE.Mesh(new THREE.SphereGeometry(5.5, 64, 32), new THREE.MeshBasicMaterial({ map: hdr, side: THREE.BackSide, color: new THREE.Color(0.55, 0.55, 0.6) }));
+      sky.position.y = 1.5; sky.rotation.y = 1.9; env.add(sky); room.visible = false;
+    }
+    scene.environment = pmrem.fromScene(env, 0.015).texture;
+  };
+  buildEnv(null);
+  try {
+    const bin = Uint8Array.from(atob(studioHdr.split(",")[1]), (c) => c.charCodeAt(0));
+    const data = new EXRLoader().parse(bin.buffer);
+    const t = new THREE.DataTexture(data.data, data.width, data.height, THREE.RGBAFormat, data.type);
+    t.colorSpace = THREE.LinearSRGBColorSpace; t.flipY = false; t.magFilter = t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; t.needsUpdate = true;
+    buildEnv(t);
+  } catch (e) { console.warn("HDRI", e); }
+  scene.environmentIntensity = 0.6;
 
   // ---------------- lights
   const L = {};
@@ -89,14 +108,15 @@ export function buildStage(renderer, scene, camera, tex, M) {
     tube(new THREE.Vector3(x, 0, 0), new THREE.Vector3(x + 0.3, 0, s), 0.005); tube(new THREE.Vector3(x, s, 0), new THREE.Vector3(x + 0.3, s, s), 0.005);
   }
   const canMat = new THREE.MeshStandardMaterial({ color: 0x111113, metalness: 0.7, roughness: 0.5 });
-  const beams = [];
+  const beams = [], movers = [];
   for (const [light, col] of [[L.parV, 0x9b4dff], [L.parG, 0x46ff2a]]) {
     const can = new THREE.Group();
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.075, 0.26, 24, 1, true), canMat); body.rotation.x = Math.PI / 2;
     const lens = new THREE.Mesh(new THREE.CircleGeometry(0.085, 24), new THREE.MeshBasicMaterial({ color: new THREE.Color(col).multiplyScalar(4) }));
     lens.position.z = 0.13; can.add(body, lens);
     can.position.copy(light.position); can.lookAt(light.target.position); scene.add(can);
-    beams.push(makeBeam(light.position, light.target.position, col, 0.62));
+    const beam = makeBeam(light.position, light.target.position, col, 0.62);
+    beams.push(beam); movers.push({ light, can, beam, base: light.target.position.clone(), ph: movers.length * 2.1 });
   }
   for (const b of beams) scene.add(b);
 
@@ -104,7 +124,7 @@ export function buildStage(renderer, scene, camera, tex, M) {
   const smokeTex = new THREE.TextureLoader().load("tex/smoke.png");
   const haze = [];
   for (let i = 0; i < 14; i++) {
-    const m = new THREE.SpriteMaterial({ map: smokeTex, color: [0x6a3cc0, 0x2a8a20, 0x8c6a5a][i % 3], transparent: true, opacity: 0.05 + 0.04 * Math.random(), depthWrite: false, fog: false });
+    const m = new THREE.SpriteMaterial({ map: smokeTex, color: [0x6a3cc0, 0x2a8a20, 0x8c6a5a][i % 3], transparent: true, opacity: 0.03 + 0.03 * Math.random(), depthWrite: false, fog: false });
     const sp = new THREE.Sprite(m); const sc = 1.2 + Math.random() * 1.8; sp.scale.set(sc * 1.6, sc, 1);
     sp.position.set((Math.random() - 0.5) * 4.5, 0.4 + Math.random() * 1.6, -1.3 + Math.random() * 1.4);
     sp.userData = { vx: (Math.random() - 0.5) * 0.02, ph: Math.random() * 6 }; scene.add(sp); haze.push(sp);
@@ -125,7 +145,9 @@ export function buildStage(renderer, scene, camera, tex, M) {
   scene.add(dust);
 
   // ---------------- post-processing
-  const composer = new EffectComposer(renderer);
+  // 4x MSAA on the HDR target: clean edges on knobs, text and cables.
+  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+  const composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
   const gtao = new GTAOPass(scene, camera, 1, 1);
   gtao.updateGtaoMaterial({ radius: 0.12, distanceExponent: 1.4, thickness: 1.2, scale: 1.0, samples: 12 });
@@ -134,17 +156,23 @@ export function buildStage(renderer, scene, camera, tex, M) {
   composer.addPass(gtao);
   const bokeh = new BokehPass(scene, camera, { focus: 2, aperture: 0.0025, maxblur: 0.006 });
   composer.addPass(bokeh);
-  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.26, 0.3, 3.2);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.2, 0.25, 3.6);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
   // Lens: vignette, a touch of chromatic fringing at the edges, film grain.
   const lens = new ShaderPass({
-    uniforms: { tDiffuse: { value: null }, time: { value: 0 }, vig: { value: 0.42 }, ca: { value: 0.0016 }, grain: { value: 0.035 } },
+    uniforms: { tDiffuse: { value: null }, time: { value: 0 }, vig: { value: 0.32 }, ca: { value: 0.0005 }, grain: { value: 0.012 } },
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
     fragmentShader: `uniform sampler2D tDiffuse; uniform float time, vig, ca, grain; varying vec2 vUv;
       float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)))*43758.5453); }
       void main(){ vec2 c = vUv-0.5; float r2 = dot(c,c);
         vec3 col; col.r = texture2D(tDiffuse, vUv - c*ca*r2*8.0).r; col.g = texture2D(tDiffuse, vUv).g; col.b = texture2D(tDiffuse, vUv + c*ca*r2*8.0).b;
+        // light unsharp mask: crisper edges and print
+        vec2 px = vec2(dFdx(vUv.x), dFdy(vUv.y));
+        vec3 blur = (texture2D(tDiffuse, vUv + vec2(px.x,0.0)).rgb + texture2D(tDiffuse, vUv - vec2(px.x,0.0)).rgb + texture2D(tDiffuse, vUv + vec2(0.0,px.y)).rgb + texture2D(tDiffuse, vUv - vec2(0.0,px.y)).rgb) * 0.25;
+        col += (col - blur) * 0.35;
+        // filmic contrast: slightly deeper blacks, richer mids
+        col = clamp(col, 0.0, 1.0); col = mix(col, col*col*(3.0-2.0*col), 0.22);
         col *= 1.0 - vig * smoothstep(0.08, 0.62, r2*1.6);
         col += (h(vUv*1000.0 + time) - 0.5) * grain;
         gl_FragColor = vec4(col, 1.0); }`,
@@ -156,6 +184,12 @@ export function buildStage(renderer, scene, camera, tex, M) {
     lens.uniforms.time.value = t % 100;
     for (const sp of haze) { sp.position.x += sp.userData.vx * 0.016; if (Math.abs(sp.position.x) > 2.6) sp.userData.vx *= -1; sp.material.rotation = Math.sin(t * 0.05 + sp.userData.ph) * 0.2; }
     for (const b of beams) b.material.uniforms.time.value = t;
+    // Slow, lazy sweeps like a lighting op during a soundcheck.
+    for (const m of movers) {
+      const tg = m.base.clone().add(new THREE.Vector3(Math.sin(t * 0.13 + m.ph) * 0.45, 0, Math.cos(t * 0.09 + m.ph) * 0.3));
+      m.light.target.position.copy(tg); m.can.lookAt(tg);
+      m.beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), tg.clone().sub(m.light.position).normalize());
+    }
   }
   return { L, setLights, composer, gtao, bokeh, bloom, lens, update, dust };
 }

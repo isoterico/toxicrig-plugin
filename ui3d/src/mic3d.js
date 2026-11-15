@@ -6,7 +6,10 @@ export function micFactory(M, tex) {
   const darkMetal = new THREE.MeshStandardMaterial({ color: 0x2c2e31, metalness: 0.9, roughness: 0.42, roughnessMap: tex("grunge.jpg", false, 0.1) });
   const satin = new THREE.MeshStandardMaterial({ color: 0xc9c2b4, metalness: 1, roughness: 0.32, roughnessMap: tex("grunge.jpg", false, 0.1) });
   const blackPaint = new THREE.MeshPhysicalMaterial({ color: 0x0d0d0f, metalness: 0.4, roughness: 0.45, clearcoat: 0.6, clearcoatRoughness: 0.2 });
-  const mesh = new THREE.MeshStandardMaterial({ map: tex("hex.png", true, 0.004, 0.004 * Math.sqrt(3) / 3), color: 0xb8bcc2, metalness: 1, roughness: 0.35, alphaTest: 0.5, side: THREE.DoubleSide });
+  // Mic grilles: woven steel mesh. Solid (not cut-out): at this size real mesh reads as a
+  // fine metallic texture with dark gaps, which is what the hex map gives as colour/roughness.
+  const hexT = tex("hex.png", true, 0.0025, 0.0025 * Math.sqrt(3) / 3);
+  const mesh = new THREE.MeshStandardMaterial({ map: hexT, color: 0xc4c8ce, metalness: 1, roughness: 0.38, side: THREE.DoubleSide });
   const inner = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 1 });
   const gold = new THREE.MeshStandardMaterial({ color: 0xd9ad55, metalness: 1, roughness: 0.25 });
 
@@ -45,19 +48,24 @@ export function micFactory(M, tex) {
     h.add(headIn, head, top, bot, band, body, logo); h.position.z = 0.028; g.add(h);
     g.userData.len = 0.06; g.userData.vertical = true; return g;
   }
+  // Boom stand built from real parts: tripod base, pole, clutch, boom arm passing through the
+  // clutch with a counterweight behind, swivel clip at the boom tip holding the mic.
   function stand() {
     const g = new THREE.Group();
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 1, 16), blackPaint); pole.name = "pole";
-    const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 1, 16), blackPaint); boom.name = "boom";
-    const clutch = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.04, 16), blackPaint); clutch.name = "clutch";
-    g.add(pole, boom, clutch);
-    for (let i = 0; i < 3; i++) {
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.32, 10), blackPaint); leg.name = "leg" + i; g.add(leg);
-    }
-    g.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+    const part = (name, geo, m = blackPaint) => { const x = new THREE.Mesh(geo, m); x.name = name; x.castShadow = x.receiveShadow = true; g.add(x); return x; };
+    part("pole", new THREE.CylinderGeometry(0.0095, 0.0095, 1, 20));
+    part("poleUpper", new THREE.CylinderGeometry(0.0075, 0.0075, 1, 20), satin);
+    part("hub", new THREE.CylinderGeometry(0.02, 0.022, 0.05, 20));
+    part("clutch", new THREE.CylinderGeometry(0.017, 0.017, 0.045, 20));
+    part("knob", new THREE.CylinderGeometry(0.012, 0.012, 0.012, 16));
+    part("boom", new THREE.CylinderGeometry(0.0075, 0.0075, 1, 16));
+    part("weight", new THREE.CylinderGeometry(0.02, 0.02, 0.06, 20));
+    part("clip", new THREE.CylinderGeometry(0.009, 0.009, 0.03, 16));
+    part("swivel", new THREE.SphereGeometry(0.009, 16, 8));
+    for (let i = 0; i < 3; i++) { part("leg" + i, new THREE.CylinderGeometry(0.0065, 0.0065, 1, 12)); part("foot" + i, new THREE.SphereGeometry(0.009, 12, 8), M.Rubber); }
     return g;
   }
-  const between = (m, a, b) => { const d = new THREE.Vector3().subVectors(b, a); m.position.copy(a).addScaledVector(d, 0.5); m.scale.set(1, d.length() / m.geometry.parameters.height, 1); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); };
+  const between = (m, a, b) => { const d = new THREE.Vector3().subVectors(b, a); m.position.copy(a).addScaledVector(d, 0.5); m.scale.set(1, d.length(), 1); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); };
 
   function rig() {
     const root = new THREE.Group();
@@ -65,26 +73,45 @@ export function micFactory(M, tex) {
     for (const k in mics) { mics[k].traverse((m) => { if (m.isMesh) { m.castShadow = true; m.userData.ctl = { kind: "mic" }; } }); root.add(mics[k]); }
     const st = stand(); root.add(st);
     st.traverse((m) => { m.userData.ctl = { kind: "mic" }; });
+    const P = (n) => st.getObjectByName(n);
     function place(type, speaker, frontZ, pos, dist) {
       for (const k in mics) mics[k].visible = k === type;
       const m = mics[type];
       const tip = new THREE.Vector3(speaker.x + pos * speaker.r * 0.92, speaker.y, frontZ + 0.012 + dist * 0.29);
       m.position.copy(tip); m.rotation.set(0, 0, 0);
-      const back = tip.clone().add(new THREE.Vector3(0, m.userData.vertical ? 0.06 : 0, m.userData.vertical ? 0.03 : m.userData.len));
-      // Boom stand: base out to the side and in front, boom reaches the mic's back end.
       const side = speaker.x <= 0 ? -1 : 1;
-      const base = new THREE.Vector3(speaker.x + side * 0.55, -0.012, tip.z + 0.22);
-      const top = new THREE.Vector3(base.x, Math.max(tip.y + 0.12, 0.4), base.z);
-      between(st.getObjectByName("pole"), base, top);
-      between(st.getObjectByName("boom"), top.clone().add(new THREE.Vector3(-side * 0.1, 0.05, 0.08)), back);
-      st.getObjectByName("clutch").position.copy(top);
+      // Where the clip grabs the mic: the back of a pencil mic, the bottom of a big condenser.
+      const grip = m.userData.vertical ? tip.clone().add(new THREE.Vector3(0, -0.165, 0.028)) : tip.clone().add(new THREE.Vector3(0, 0, m.userData.len + 0.012));
+      const clutch = new THREE.Vector3(grip.x + side * 0.42, grip.y + (m.userData.vertical ? -0.02 : 0.1), grip.z + 0.2);
+      const base = new THREE.Vector3(clutch.x, -0.012, clutch.z);
+      const hubY = 0.12;
+      between(P("pole"), base.clone().setY(hubY), clutch.clone().setY(Math.max(hubY + 0.05, clutch.y * 0.55)));
+      between(P("poleUpper"), clutch.clone().setY(Math.max(hubY + 0.05, clutch.y * 0.55) - 0.02), clutch.clone().add(new THREE.Vector3(0, -0.02, 0)));
+      P("hub").position.copy(base).setY(hubY);
+      P("clutch").position.copy(clutch);
+      const dir = grip.clone().sub(clutch).normalize();
+      P("clutch").quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(-dir.z, 0, dir.x).normalize());
+      P("knob").position.copy(clutch).add(new THREE.Vector3(-dir.z, 0, dir.x).normalize().multiplyScalar(0.028));
+      P("knob").quaternion.copy(P("clutch").quaternion);
+      const tail = clutch.clone().addScaledVector(dir, -0.2);
+      const boomEnd = grip.clone().addScaledVector(dir, -0.018);
+      between(P("boom"), tail, boomEnd);
+      P("weight").position.copy(tail); P("weight").quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      P("swivel").position.copy(boomEnd);
+      // Clip holds the mic along its own axis.
+      P("clip").position.copy(grip);
+      P("clip").quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), m.userData.vertical ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1));
       for (let i = 0; i < 3; i++) {
-        const a = i * Math.PI * 2 / 3 + 0.4; const foot = base.clone().add(new THREE.Vector3(Math.cos(a) * 0.26, 0, Math.sin(a) * 0.26));
-        between(st.getObjectByName("leg" + i), base.clone().add(new THREE.Vector3(0, 0.1, 0)), foot);
+        const a = i * Math.PI * 2 / 3 + 0.5; const foot = base.clone().add(new THREE.Vector3(Math.cos(a) * 0.27, 0.0, Math.sin(a) * 0.27));
+        between(P("leg" + i), base.clone().setY(hubY - 0.01), foot.clone().setY(-0.004));
+        P("foot" + i).position.copy(foot).setY(-0.004);
       }
-      return { tip, back };
+      // Cable route: from the mic, along the boom, down the pole, out on the floor.
+      const route = [grip.clone().add(new THREE.Vector3(0, -0.012, 0.01)), boomEnd.clone().lerp(clutch, 0.5).add(new THREE.Vector3(0, -0.02, 0)),
+        clutch.clone().add(new THREE.Vector3(0.012 * side, -0.05, 0)), base.clone().add(new THREE.Vector3(0.016 * side, 0.18, 0.01)), base.clone().add(new THREE.Vector3(0.05 * side, -0.004, 0.08))];
+      return { tip, back: grip, route };
     }
-    return { root, place };
+    return { root, place, mics };
   }
   return { rig };
 }

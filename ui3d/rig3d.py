@@ -153,7 +153,41 @@ def corners(W, D, z_lo, z_hi, m="CornerMetal", s=0.026):
                 box("Corner", (s, s, s), (x * 0.993, y * 0.975, z), m, bevel=s * 0.28)
 
 # ------------------------------------------------------------------ export
-def export(path, knob_ids, toggle_ids):
+def bake_ao(knob_ids, slider_ids, size=2048, samples=48):
+    """Join every static part into one mesh, give it a second UV set (lightmap) and bake
+    ambient occlusion into it with Cycles. The real-time engine multiplies this into the
+    lighting: every crevice, every knob base, every recess gets the soft darkening that real
+    objects have and that real-time lighting can't compute. That is most of the 'CG look'."""
+    scene = bpy.context.scene
+    interactive = set(k + "_cap" for k in knob_ids) | set(k + "_cap" for k in slider_ids)
+    def is_glassy(o): return any(m and m.name in ("Glass",) for m in o.data.materials)
+    static = [o for o in bpy.data.objects if o.type == "MESH" and o.parent is None and o.name not in interactive
+              and not o.get("keep_uv") and not is_glassy(o) and not o.name.endswith("_hole")]
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in static: o.select_set(True)
+    bpy.context.view_layer.objects.active = static[0]
+    bpy.ops.object.join()
+    body = bpy.context.active_object; body.name = "Static"
+    lm = body.data.uv_layers.new(name="Lightmap"); body.data.uv_layers.active = lm
+    bpy.ops.object.mode_set(mode="EDIT"); bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.smart_project(angle_limit=1.15, island_margin=0.004, area_weight=0.0, correct_aspect=True, scale_to_bounds=True)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    img = bpy.data.images.new("AO", size, size, alpha=False, float_buffer=False)
+    for m in body.data.materials:
+        nt = m.node_tree; n = nt.nodes.new("ShaderNodeTexImage"); n.image = img; n.name = "BakeTarget"
+        for x in nt.nodes: x.select = False
+        n.select = True; nt.nodes.active = n
+    hidden = [o for o in bpy.data.objects if o.type == "MESH" and is_glassy(o)]
+    for o in hidden: o.hide_render = True
+    scene.render.engine = "CYCLES"; scene.cycles.device = "CPU"; scene.cycles.samples = samples
+    scene.render.bake.margin = 6
+    bpy.ops.object.select_all(action="DESELECT"); body.select_set(True); bpy.context.view_layer.objects.active = body
+    bpy.ops.object.bake(type="AO")
+    for o in hidden: o.hide_render = False
+    for m in body.data.materials: m.node_tree.nodes.remove(m.node_tree.nodes["BakeTarget"])
+    return img
+
+def export(path, knob_ids, toggle_ids, slider_ids=(), ao=True):
     """Freeze, box-map UVs in world metres, write embedded glTF JSON (served as .json)."""
     for cid in knob_ids:
         o = bpy.data.objects[cid + "_cap"]; o.rotation_euler = (math.pi / 2, math.radians(-135), 0)
@@ -175,6 +209,11 @@ def export(path, knob_ids, toggle_ids):
                 w = mw @ l.vert.co
                 l[uv].uv = (w.y, w.z) if ax == 0 else ((w.x, w.z) if ax == 1 else (w.x, w.y))
         bm.to_mesh(o.data); bm.free()
+    if ao:
+        img = bake_ao(knob_ids, slider_ids)
+        png = path.replace(".json", "_ao.png")
+        img.filepath_raw = png; img.file_format = "PNG"; img.save()
+        print("baked", png)
     tmp = path + ".glb"
     bpy.ops.export_scene.gltf(filepath=tmp, export_format="GLB", export_apply=True, export_lights=False,
                               export_cameras=False, export_yup=True, export_extras=True)

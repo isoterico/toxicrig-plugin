@@ -91,6 +91,22 @@ export function makeMaterials(renderer, manager) {
     AcrylicRing: P({ color: 0xd8c8ff, roughness: 0.15, transmission: 0.6, thickness: 0.004, emissive: 0x9b4dff, emissiveIntensity: 1.6 }),
     AcrylicCore: S({ color: 0x2a1040, emissive: 0xb050ff, emissiveIntensity: 2.5 }),
   });
+  // --- stage props
+  Object.assign(M, {
+    GuitarPaint: P({ color: 0x3a1466, metalness: 0.55, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.04, envMapIntensity: 1.6 }),
+    GuardPearl: P({ color: 0xe8e4dc, roughness: 0.35, clearcoat: 0.8, iridescence: 0.4, iridescenceIOR: 1.4 }),
+    Maple: P({ color: 0xc9945a, roughness: 0.45, clearcoat: 0.7, clearcoatRoughness: 0.2, map: tex("walnut_col.jpg", true, 0.3, 0.15) }),
+    Rosewood: S({ color: 0x3a2418, roughness: 0.7, map: tex("walnut_col.jpg", true, 0.2, 0.1) }),
+    PickupBlack: P({ color: 0x0c0c0d, roughness: 0.35, clearcoat: 0.5 }),
+    StringSteel: S({ color: 0xd0d0d4, metalness: 1, roughness: 0.25 }),
+    StandBlack: P({ color: 0x111113, metalness: 0.6, roughness: 0.45, clearcoat: 0.5, roughnessMap: grunge(0.2) }),
+    CaseBlack: S({ color: 0x0f0f11, roughness: 0.85, normalMap: tex("tolex_nrm.jpg", false, 0.08), normalScale: new THREE.Vector2(0.5, 0.5), roughnessMap: grunge(0.4) }),
+    Aluminium: S({ color: 0xb8bcc2, metalness: 1, roughness: 0.35, roughnessMap: brushedR(0.2) }),
+    StencilWhite: S({ color: 0xd8d4c8, roughness: 0.8 }),
+    DrumWrap: P({ color: 0x1a0d2e, metalness: 0.7, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.4 }),
+    DrumHead: S({ color: 0xe8e2d4, roughness: 0.7 }),
+    Bronze: P({ color: 0xc08a3e, metalness: 1, roughness: 0.32, roughnessMap: brushedR(0.08), envMapIntensity: 1.6 }),
+  });
   M.HexMeshPurple = M.HexMesh.clone(); M.HexMeshPurple.color = new THREE.Color(0x7a4ac0);
   M.Emblem = new THREE.MeshStandardMaterial({ map: emblemTexture("#c9a25a", "rgba(0,0,0,0)"), transparent: true, metalness: 1, roughness: 0.45, envMapIntensity: 1.5, polygonOffset: true, polygonOffsetFactor: -2 });
   M.Glass.userData.glass = true;
