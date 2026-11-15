@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ToxicRig - palco 3D</title>
+<style>
+/* VOICE: a dark live room seen through a camera operator's eyes; gear is the only bright thing.
+   IDEA: the plugin is a real stage: empty, you place the amp, you walk up to it, you build the pedal chain.
+   PICTURE: one live 3D scene - amp, board, pedals, cables share the same lights and shadows.
+   COLOUR/TYPE: near-black room, toxic green #39ff14 and violet #9b4dff only as light; Orbitron + Rajdhani.
+   LAYOUT: full-bleed canvas, tiny chrome top-left, hint bottom-centre, catalogue overlay, pedal panel right (bottom on phones). */
+@font-face{font-family:Orbitron;src:url(fonts/Orbitron-ExtraBold.ttf);font-weight:700 900}
+@font-face{font-family:Rajdhani;src:url(fonts/Rajdhani-SemiBold.ttf);font-weight:400 600}
+@font-face{font-family:Rajdhani;src:url(fonts/Rajdhani-Bold.ttf);font-weight:700}
+:root{color-scheme:dark;--g:#39ff14;--v:#9b4dff;--ink:#ecebf3;--dim:#a19fb4;--panel:rgba(12,12,18,.88)}
+*{box-sizing:border-box;min-width:0}
+html,body{margin:0;height:100%;background:#060609;color:var(--ink);font:16px/1.45 Rajdhani,system-ui,sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none}
+#gl{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+header{position:fixed;left:max(14px,env(safe-area-inset-left));top:max(10px,env(safe-area-inset-top));display:flex;align-items:center;gap:10px;z-index:5;flex-wrap:wrap}
+.logo{font:800 20px Orbitron;letter-spacing:.06em;color:var(--g);text-shadow:0 0 18px rgba(57,255,20,.35)}
+.logo small{display:block;font:700 11px Rajdhani;letter-spacing:.24em;color:#b48cff;text-shadow:none}
+button{font:700 16px Rajdhani;letter-spacing:.03em;color:var(--ink);background:var(--panel);border:1px solid #302f3e;border-radius:10px;min-height:44px;padding:0 14px;cursor:pointer}
+button:hover:not([disabled]),button:focus-visible{border-color:var(--g);outline:none}
+button[disabled]{opacity:.4;cursor:default}
+#back,#changeAmp{display:none}
+body[data-shot="amp"] #back,body[data-shot="pedal"] #back{display:inline-block}
+body[data-shot="wide"] #changeAmp{display:inline-block}
+#hint{position:fixed;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--panel);border:1px solid #2a2936;border-radius:12px;padding:9px 16px;color:var(--dim);max-width:min(760px,92vw);text-align:center;z-index:4}
+body[data-shot="pedal"] #hint{display:none}
+#cta{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);display:grid;place-items:center;gap:12px;width:min(400px,84vw);aspect-ratio:1.5;border:2px dashed rgba(57,255,20,.55);border-radius:22px;background:rgba(57,255,20,.04);color:var(--ink);cursor:pointer;font:600 22px Rajdhani;text-align:center;z-index:3;transition:opacity .5s,background .25s}
+#cta:hover{background:rgba(57,255,20,.09)}
+#cta .plus{width:72px;height:72px;border-radius:50%;border:2px solid var(--g);display:grid;place-items:center;font-size:44px;color:var(--g);box-shadow:0 0 30px rgba(57,255,20,.35);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 6px rgba(57,255,20,.15)}}
+#cta.gone{opacity:0;pointer-events:none}
+#bubble{position:fixed;z-index:9;pointer-events:none;background:#141420;border:1px solid var(--g);color:var(--ink);border-radius:8px;padding:4px 10px;font:700 16px Rajdhani;letter-spacing:.04em;opacity:0;transform:translate(-50%,-150%);transition:opacity .15s;white-space:nowrap}
+#bubble.on{opacity:1}
+#toast{position:fixed;left:50%;top:76px;transform:translate(-50%,-16px);opacity:0;z-index:30;background:#15131f;border:1px solid var(--v);border-radius:12px;padding:11px 16px;max-width:min(520px,92vw);transition:.3s;pointer-events:none;text-align:center}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+#cat{position:fixed;inset:0;z-index:20;background:rgba(3,3,6,.74);backdrop-filter:blur(6px);display:none;place-items:center;padding:14px}
+#cat.open{display:grid}
+.sheet{width:min(1140px,100%);max-height:92vh;overflow:auto;background:#0d0d13;border:1px solid #2b2a38;border-radius:20px;padding:20px}
+.sheet h2{margin:0 0 2px;font:800 22px Orbitron;color:var(--g)}
+.sheet p.sub{margin:0 0 16px;color:var(--dim)}
+#catCards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(250px,100%),1fr));gap:14px}
+.card{background:#12121a;border:1px solid #2b2a38;border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
+.card .pic{aspect-ratio:1.5;background:radial-gradient(70% 70% at 50% 60%,#1d1c2a,#0a0a0f);display:grid;place-items:center}
+.card .pic img{width:100%;height:100%;object-fit:contain}
+.card .pic .soon{color:#5d5b70;font:700 14px Rajdhani;letter-spacing:.1em;text-align:center;padding:10px}
+.card .txt{padding:12px 14px 14px;display:flex;flex-direction:column;gap:8px;flex:1}
+.card h3{margin:0;font:800 17px Orbitron}
+.card ul{margin:0;padding-left:18px;color:#c9c7d8}
+.card .tags{display:flex;flex-wrap:wrap;gap:5px}
+.card .tags span{font-size:13px;border:1px solid #33324a;border-radius:20px;padding:0 8px;color:#b9b6cc}
+.card button{margin-top:auto;background:var(--g);color:#06120a;border:0}
+.card button[disabled]{background:#1f1e2a;color:#6c6a80}
+#panel{position:fixed;z-index:10;background:rgba(11,11,17,.92);backdrop-filter:blur(10px);border:1px solid #2c2b3a;padding:16px;display:none;flex-direction:column;gap:10px;overflow:auto}
+#panel.open{display:flex}
+@media (min-width:820px){#panel{right:14px;top:14px;bottom:14px;width:360px;border-radius:18px}}
+@media (max-width:819px){#panel{left:0;right:0;bottom:0;max-height:48vh;border-radius:18px 18px 0 0;padding-bottom:max(16px,env(safe-area-inset-bottom))}}
+#panel .ph{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+#panel h2{margin:0;font:800 19px Orbitron;color:var(--g)}
+#panel small{color:#b48cff;font-weight:700}
+#panel p{margin:0;color:#c9c7d8}
+#panel .x{min-width:44px;padding:0}
+#panel .onoff{border-color:#3a3948}
+#panel .onoff.on{border-color:#ff3a2a;color:#ffb3aa;box-shadow:0 0 16px rgba(255,42,26,.2) inset}
+#panel .params{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+#panel .pr{background:#14141d;border:1px solid #262534;border-radius:10px;padding:6px 10px;display:flex;justify-content:space-between;gap:6px;font-size:15px}
+#panel .pr span{color:var(--dim)}
+#panel .order{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#panel .danger:hover{border-color:#ff4a4a}
+#loading{position:fixed;inset:0;display:grid;place-items:center;z-index:40;background:#060609;color:var(--dim);font:600 18px Rajdhani;transition:opacity .5s;text-align:center}
+#loading i{display:block;width:220px;height:3px;background:#1d1c27;margin:10px auto 0;border-radius:2px;overflow:hidden}
+#loading i b{display:block;height:100%;width:0;background:var(--g);transition:width .2s}
+#nogl{display:none}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<header>
+  <div class="logo">TOXICRIG<small>PALCO 3D</small></div>
+  <button id="back">&larr; Allontana</button>
+  <button id="changeAmp">Ampli</button>
+</header>
+<div id="cta" role="button" tabindex="0"><div class="plus">+</div>Clicca qui per scegliere<br>l'amplificatore</div>
+<div id="hint"></div>
+<div id="bubble"></div>
+<div id="toast"></div>
+<div id="panel" aria-label="Pedale"></div>
+<div id="cat" role="dialog" aria-label="Catalogo">
+  <div class="sheet"><h2 id="catTitle"></h2><p class="sub" id="catSub"></p><div id="catCards"></div></div>
+</div>
+<div id="loading"><div>Preparo il palco 3D...<i><b></b></i></div></div>
+<script src="app.js"></script>
+</body>
+</html>
