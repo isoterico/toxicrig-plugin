@@ -139,7 +139,7 @@ def text(name, s, size, loc, mat, font, extrude=0.0002, align="CENTER"):
     o = bpy.context.active_object; o.name = name
     o.data.body = s; o.data.size = size; o.data.extrude = extrude
     o.data.align_x = align; o.data.align_y = "CENTER"
-    o.data.font = bpy.data.fonts.load(font, check_existing=True)
+    o.data.font = bpy.data.fonts.load(font, check_existing=True); o.data.resolution_u = 2 if size < 0.008 else 3
     o.data.materials.append(mat)
     return o
 
@@ -385,6 +385,15 @@ elif MODE == "asset":
                                  "w": round((u1 - u0) * RES_X), "h": round((v1 - v0) * RES_Y),
                                  "cx": round(project((x, fy - 0.02, z))[0] * RES_X), "cy": round(project((x, fy - 0.02, z))[1] * RES_Y)})
     with open(OUT + ("/meta.json" if only is None else "/meta_partial.json"), "w") as fp: json.dump(meta, fp, indent=1)
+elif MODE == "gltf2":
+    import sys as _s; _s.path.insert(0, "/home/claude/amp3d"); import rig3d
+    for o in list(bpy.data.objects):
+        if o.type in ("LIGHT", "CAMERA") or o.name == "Floor": bpy.data.objects.remove(o)
+    rig3d._M.update({m.name: m for m in bpy.data.materials})
+    for i, x in enumerate((-0.15, 0.15)): rig3d.speaker("spk%d" % i, x, CAB_H / 2 + 0.004, -CAB_D / 2 + 0.03, 0.135)
+    rig3d.marker("ShotPanel", (0, fy - 0.005, z0 + 0.12), w=W - 0.02, h=HEAD_H - 0.01)
+    rig3d.marker("ShotCab", (0, -CAB_D / 2, CAB_H / 2), w=W, h=CAB_H)
+    rig3d.export("/home/claude/stage3d/public/models/british30.json", [c[0] for c in controls if c[1] == "knob"], [c[0] for c in controls if c[1] == "toggle"])
 elif MODE == "gltf":
     # Real-time version: the UI renders this mesh live (three.js / WebView),
     # so light, shadows and perspective are shared with pedals and floor.

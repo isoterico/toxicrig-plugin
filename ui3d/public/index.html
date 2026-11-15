@@ -26,8 +26,9 @@ button[disabled]{opacity:.4;cursor:default}
 #back,#changeAmp{display:none}
 body[data-shot="amp"] #back,body[data-shot="pedal"] #back{display:inline-block}
 body[data-shot="wide"] #changeAmp{display:inline-block}
+body[data-shot="empty"] #quality{display:none}
 #hint{position:fixed;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--panel);border:1px solid #2a2936;border-radius:12px;padding:9px 16px;color:var(--dim);max-width:min(760px,92vw);text-align:center;z-index:4}
-body[data-shot="pedal"] #hint{display:none}
+body[data-shot="pedal"] #hint,body[data-shot="cab"] #hint{display:none}
 #cta{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);display:grid;place-items:center;gap:12px;width:min(400px,84vw);aspect-ratio:1.5;border:2px dashed rgba(57,255,20,.55);border-radius:22px;background:rgba(57,255,20,.04);color:var(--ink);cursor:pointer;font:600 22px Rajdhani;text-align:center;z-index:3;transition:opacity .5s,background .25s}
 #cta:hover{background:rgba(57,255,20,.09)}
 #cta .plus{width:72px;height:72px;border-radius:50%;border:2px solid var(--g);display:grid;place-items:center;font-size:44px;color:var(--g);box-shadow:0 0 30px rgba(57,255,20,.35);animation:pulse 2s ease-in-out infinite}
@@ -70,6 +71,14 @@ body[data-shot="pedal"] #hint{display:none}
 #panel .pr span{color:var(--dim)}
 #panel .order{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 #panel .danger:hover{border-color:#ff4a4a}
+#panel .note{font-size:14px;color:#8f8da3}
+#panel .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+#panel .seg button.sel{border-color:var(--g);color:var(--g);box-shadow:0 0 14px rgba(57,255,20,.15) inset}
+#panel .field{display:grid;grid-template-columns:110px 1fr auto;align-items:center;gap:8px;color:var(--dim);font-weight:600}
+#panel .field b{color:var(--ink);min-width:58px;text-align:right}
+#panel .field.ir{grid-template-columns:110px 1fr}
+#panel input[type=range]{accent-color:#39ff14;width:100%;min-height:32px}
+#panel select,#panel input[type=file]{font:600 15px Rajdhani;background:#14141d;color:var(--ink);border:1px solid #302f3e;border-radius:8px;min-height:40px;padding:0 8px;grid-column:2/-1}
 #loading{position:fixed;inset:0;display:grid;place-items:center;z-index:40;background:#060609;color:var(--dim);font:600 18px Rajdhani;transition:opacity .5s;text-align:center}
 #loading i{display:block;width:220px;height:3px;background:#1d1c27;margin:10px auto 0;border-radius:2px;overflow:hidden}
 #loading i b{display:block;height:100%;width:0;background:var(--g);transition:width .2s}
@@ -82,6 +91,7 @@ body[data-shot="pedal"] #hint{display:none}
   <div class="logo">TOXICRIG<small>PALCO 3D</small></div>
   <button id="back">&larr; Allontana</button>
   <button id="changeAmp">Ampli</button>
+  <button id="quality">Qualità</button>
 </header>
 <div id="cta" role="button" tabindex="0"><div class="plus">+</div>Clicca qui per scegliere<br>l'amplificatore</div>
 <div id="hint"></div>

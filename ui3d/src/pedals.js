@@ -71,10 +71,22 @@ export function fmt(par, v) {
 }
 
 export const AMPS = [
-  { id: "british30", name: "British 30", ready: true, tags: ["Classe A", "4x EL84", "senza controreazione", "2x12"],
-    text: ["Brillante, 'chime', satura ricco quando lo spingi. Il riferimento è il suono Red Special.", "Comandi: Gain, Master, Bass, Middle, Treble, Cut, Depth, Sag, Bright, Channel."] },
-  { id: "american", name: "American Twin", ready: false, tags: ["Classe AB", "6L6", "1x12 open back"], text: ["Pulito cristallino con tanta headroom."] },
-  { id: "modern", name: "Modern 5050", ready: false, tags: ["Alto guadagno", "4 stadi", "4x12"], text: ["Bassi stretti per riff veloci e palm mute."] },
+  { id: "british30", model: "British", name: "British 30", file: "models/british30.json", cab: "British 2x12",
+    tags: ["Classe A", "4x EL84", "senza controreazione", "testata + 2x12"],
+    text: ["Brillante, 'chime', satura ricco quando lo spingi. Il riferimento è il suono Red Special.", "Legno di noce, pannello in ottone, valvole a vista."] },
+  { id: "american", model: "American", name: "American Twin", file: "models/american.json", cab: "American 1x12",
+    tags: ["Classe AB", "6L6", "combo 1x12"],
+    text: ["Pulito cristallino con tanta headroom, bassi pieni e alti a campana.", "Pannello nero, tela argento, manopole numerate."] },
+  { id: "modern", model: "Modern", name: "Modern 5050", file: "models/modern5050.json", cab: "Modern 4x12",
+    tags: ["Alto guadagno", "4 stadi", "testata + 2x12 su ruote"],
+    text: ["Bassi stretti e distorsione densa per riff veloci e palm mute.", "Acciaio spazzolato, griglia esagonale, valvole a vista."] },
+];
+
+export const CABS = ["British 2x12", "American 1x12", "Modern 4x12", "IR utente"];
+export const MICS = [
+  { id: "dyn", name: "Dinamico", text: "Medi in faccia, attacco deciso: il classico da palco." },
+  { id: "ribbon", name: "Nastro", text: "Alti morbidi e bassi caldi: toglie l'asprezza al gain alto." },
+  { id: "cond", name: "Condensatore", text: "Dettaglio e aria: si sente anche la stanza." },
 ];
 
 export const AMP_CONTROLS = [
