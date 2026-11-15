@@ -40,6 +40,15 @@ export const PEDALS = [
     desc: "Riverbero a rete di ritardi (FDN): stanza o hall. Damping scurisce le code come in un ambiente vero.",
     params: [p("mix", "Mix", 0, 1, 0.25), p("decay", "Decay", 0.2, 12, 2.2, 2, "s"), p("size", "Size", 0, 1, 0.6),
       p("predelay", "Pre-Delay", 0, 200, 20, 40, "ms"), p("damping", "Damping", 0, 1, 0.4)] },
+  { id: "nfuzz", name: "Nuclear Fuzz", short: "NUCLEAR FUZZ", color: 0x2a1744, ink: "#d8d0e6", w: 0.12, d: 0.125, custom: "nuke", jacks: "top",
+    desc: "Fuzz industriale a due stadi con gate integrato: il gate ascolta la chitarra prima del fuzz e taglia il rumore appena fermi le corde.",
+    params: [p("drive", "Drive", 0, 1, 0.7), p("gate", "Gate", 0, 1, 0.4), p("volume", "Volume", -24, 12, -6, 0, "dB")] },
+  { id: "bioboost", name: "Bio-Boost", short: "BIO-BOOST", color: 0x8fcf2a, ink: "#0d1407", w: 0.046, d: 0.1, custom: "bio", jacks: "top", metal: true,
+    desc: "Boost pulito fino a +20 dB per spingere i soli. CLEAN spinge un po' i medi, TREBLE toglie i bassi per un boost brillante.",
+    params: [p("boost", "Boost", 0, 1, 0.5), p("mode", "Mode", 0, 1, 0, 0, "", ["Clean", "Treble"])] },
+  { id: "mutant", name: "Mutant Mod", short: "MUTANT MOD", color: 0x4a1f80, ink: "#e8e0ff", w: 0.15, d: 0.12, custom: "mutant", jacks: "top",
+    desc: "Modulazione tre-in-uno: Chorus liquido, Flanger con feedback o Vibrato (solo segnale modulato). La valvola pulsa a tempo con l'LFO.",
+    params: [{ ...p("mode", "Mode", 0, 2, 0, 0, "", ["Chorus", "Flanger", "Vibrato"]), angles: [-50, 50, -140] }, p("speed", "Speed", 0.05, 10, 0.9, 1, "Hz")] },
 ];
 
 // Same maths as juce::NormalisableRange with a skew centre.
@@ -70,16 +79,36 @@ export function fmt(par, v) {
   return (Math.abs(v) < 10 ? v.toFixed(2) : v.toFixed(1)) + " " + par.unit;
 }
 
+// Panels: every control listed here exists in the plugin (same parameter id).
+const K = (id, label) => ({ id, label });
 export const AMPS = [
-  { id: "british30", model: "British", name: "British 30", file: "models/british30.json", cab: "British 2x12",
+  { id: "british30", model: 0, name: "British 30", file: "models/british30.json", cab: "British 2x12",
     tags: ["Classe A", "4x EL84", "senza controreazione", "testata + 2x12"],
-    text: ["Brillante, 'chime', satura ricco quando lo spingi. Il riferimento è il suono Red Special.", "Legno di noce, pannello in ottone, valvole a vista."] },
-  { id: "american", model: "American", name: "American Twin", file: "models/american.json", cab: "American 1x12",
+    text: ["Brillante, 'chime', satura ricco quando lo spingi. Il riferimento è il suono Red Special.", "Legno di noce, pannello in ottone, valvole a vista."],
+    knobs: [K("gain", "GAIN"), K("master", "MASTER"), K("bass", "BASS"), K("mid", "MIDDLE"), K("treble", "TREBLE"), K("presence", "CUT"), K("resonance", "DEPTH"), K("sag", "SAG")],
+    toggles: [{ id: "bright", n: 2, states: ["OFF", "ON"], label: "BRIGHT" }, { id: "channel", n: 3, states: ["CLEAN", "CRUNCH", "LEAD"], label: "CHANNEL" }], tube: 0x5cff3a },
+  { id: "american", model: 1, name: "American Twin", file: "models/american.json", cab: "American 1x12",
     tags: ["Classe AB", "6L6", "combo 1x12"],
-    text: ["Pulito cristallino con tanta headroom, bassi pieni e alti a campana.", "Pannello nero, tela argento, manopole numerate."] },
-  { id: "modern", model: "Modern", name: "Modern 5050", file: "models/modern5050.json", cab: "Modern 4x12",
+    text: ["Pulito cristallino con tanta headroom, bassi pieni e alti a campana.", "Pannello nero, tela argento, manopole numerate."],
+    knobs: [K("gain", "VOLUME"), K("bass", "BASS"), K("mid", "MIDDLE"), K("treble", "TREBLE"), K("presence", "PRESENCE"), K("resonance", "DEPTH"), K("sag", "SAG"), K("master", "MASTER")],
+    toggles: [{ id: "bright", n: 2, states: ["OFF", "ON"], label: "BRIGHT" }, { id: "channel", n: 3, states: ["CLEAN", "CRUNCH", "LEAD"], label: "CHANNEL" }], tube: 0x5cff3a },
+  { id: "modern", model: 2, name: "Modern 5050", file: "models/modern5050.json", cab: "Modern 4x12",
     tags: ["Alto guadagno", "4 stadi", "testata + 2x12 su ruote"],
-    text: ["Bassi stretti e distorsione densa per riff veloci e palm mute.", "Acciaio spazzolato, griglia esagonale, valvole a vista."] },
+    text: ["Bassi stretti e distorsione densa per riff veloci e palm mute.", "Acciaio spazzolato, griglia esagonale, valvole a vista."],
+    knobs: [K("gain", "GAIN"), K("bass", "BASS"), K("mid", "MIDDLE"), K("treble", "TREBLE"), K("presence", "PRESENCE"), K("resonance", "DEPTH"), K("sag", "SAG"), K("master", "MASTER")],
+    toggles: [{ id: "bright", n: 2, states: ["OFF", "ON"], label: "BRIGHT" }, { id: "channel", n: 3, states: ["CLEAN", "CRUNCH", "LEAD"], label: "CHANNEL" }], tube: 0x5cff3a },
+  { id: "overlord", model: 3, name: "Overlord", file: "models/overlord.json", cab: "Modern 4x12",
+    tags: ["Metal moderno / Djent", "Tight + Attack", "EQ medi 8 bande"],
+    text: ["Mostro ad alto guadagno per accordature ribassate. TIGHT stringe i bassi prima della distorsione, ATTACK fa uscire la plettrata.", "L'EQ grafico scolpisce i medi da 150 Hz a 4 kHz (±12 dB)."],
+    knobs: [K("master", "VOLUME"), K("gain", "GAIN"), K("attack", "ATTACK"), K("bass", "BASS"), K("treble", "TREBLE"), K("presence", "PRESENCE"), K("resonance", "DEPTH")],
+    toggles: [{ id: "tight", n: 2, states: ["OFF", "ON"], label: "TIGHT" }],
+    sliders: ["150", "250", "400", "630", "1k", "1.6k", "2.5k", "4k"].map((f, i) => ({ id: "eq" + (i + 1), label: f + " Hz" })), tube: 0x46ff2a },
+  { id: "vapor", model: 4, name: "Vapor-30", file: "models/vapor30.json", cab: "American 1x12",
+    tags: ["Ambient / Shoegaze", "Crystal Clean", "D/R integrato"],
+    text: ["Puliti cristallini e tridimensionali. Il circuito VAPOR satura solo quando plettri forte, BLOOM decide quanto dura.", "D/R aggiunge delay + riverbero in stereo, WIDTH lo allarga. STANDBY e POWER spengono l'ampli."],
+    knobs: [K("gain", "GAIN"), K("treble", "TREBLE"), K("master", "VOLUME"), K("mid", "MIDDLE"), K("bass", "BASS"), K("vapor", "VAPOR"), K("bloom", "BLOOM"),
+            K("amb", "D/R MIX"), K("resonance", "DEPTH"), K("presence", "PRESENCE"), K("amb_width", "WIDTH")],
+    toggles: [{ id: "bright", n: 2, states: ["OFF", "ON"], label: "BRIGHT" }, { id: "standby", n: 2, states: ["OFF", "ON"], label: "STANDBY" }, { id: "power", n: 2, states: ["OFF", "ON"], label: "POWER" }], tube: 0xb050ff },
 ];
 
 export const CABS = ["British 2x12", "American 1x12", "Modern 4x12", "IR utente"];
@@ -89,7 +118,7 @@ export const MICS = [
   { id: "cond", name: "Condensatore", text: "Dettaglio e aria: si sente anche la stanza." },
 ];
 
-export const AMP_CONTROLS = [
+export const AMP_CONTROLS_LEGACY = [
   { id: "gain", label: "GAIN" }, { id: "master", label: "MASTER" }, { id: "bass", label: "BASS" }, { id: "mid", label: "MIDDLE" },
   { id: "treble", label: "TREBLE" }, { id: "presence", label: "CUT" }, { id: "resonance", label: "DEPTH" }, { id: "sag", label: "SAG" },
 ];

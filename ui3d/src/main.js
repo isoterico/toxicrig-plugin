@@ -2,7 +2,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
-import { PEDALS, AMPS, AMP_CONTROLS, CABS, MICS, toValue, toNorm, fmt } from "./pedals.js";
+import { PEDALS, AMPS, CABS, MICS, toValue, toNorm, fmt } from "./pedals.js";
 import { makeMaterials } from "./materials.js";
 import { buildStage } from "./stage.js";
 import { pedalFactory, PH, PD, BOARD_TOP } from "./pedal3d.js";
@@ -43,7 +43,9 @@ $("#quality").addEventListener("click", () => { quality = quality === "alta" ? "
 
 // ------------------------------------------------------------------ amps
 // Plugin parameters are per amp slot, not per model: switching model keeps the knobs where they are.
-const ampVals = { gain: 0.5, bass: 0.5, mid: 0.5, treble: 0.5, presence: 0.5, resonance: 0.5, master: 0.5, sag: 0.5, bright: 0, channel: 1 };
+const ampVals = { gain: 0.5, bass: 0.5, mid: 0.5, treble: 0.5, presence: 0.5, resonance: 0.5, master: 0.5, sag: 0.5, bright: 0, channel: 1,
+  attack: 0.5, tight: 1, vapor: 0.4, bloom: 0.5, amb: 0.25, amb_width: 0.7, standby: 0, power: 1, eq1: 0, eq2: 0, eq3: 0, eq4: 0, eq5: 0, eq6: 0, eq7: 0, eq8: 0 };
+const EQ_TRAVEL = 0.034;
 const AMP = {};          // id -> loaded amp
 let amp = null;          // amp on stage
 const ampHolder = new THREE.Group(); scene.add(ampHolder);
@@ -52,25 +54,65 @@ const Z_AXIS = new THREE.Vector3(0, 0, -1);
 function loadAmp(def, mgr) {
   return new Promise((res, rej) => new GLTFLoader(mgr).load(def.file, (g) => res(processAmp(def, g.scene)), undefined, rej));
 }
+// Vapor-30 screen: neon logo whose rings breathe with the VAPOR amount (redrawn ~30 fps).
+function screenMaterial(a) {
+  const c = document.createElement("canvas"); c.width = 512; c.height = 288; const g = c.getContext("2d");
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.flipY = false;
+  const m = new THREE.MeshBasicMaterial({ map: t, toneMapped: false });
+  let last = -1;
+  a.screen = { draw(time, power) {
+    if (time - last < 0.033) return; last = time;
+    g.fillStyle = "#050308"; g.fillRect(0, 0, 512, 288);
+    if (power < 0.05) { t.needsUpdate = true; return; }
+    g.save(); g.globalAlpha = Math.min(1, power * 1.2);
+    const v = ampVals.vapor, pulse = 0.5 + 0.5 * Math.sin(time * (1.5 + 3 * ampVals.bloom));
+    for (let k = 0; k < 5; k++) {
+      g.strokeStyle = `rgba(155,77,255,${0.25 + 0.5 * v * (k % 2 ? pulse : 1 - pulse)})`; g.lineWidth = 5;
+      g.beginPath(); g.arc(320, 150, 40 + k * 22 + 6 * v * pulse, -1.2, 1.2); g.stroke();
+    }
+    g.strokeStyle = "rgba(57,255,20,0.85)"; g.lineWidth = 4; g.beginPath(); g.moveTo(30, 150); g.lineTo(140, 150); g.moveTo(380, 150); g.lineTo(490, 150); g.stroke();
+    g.shadowColor = "#39ff14"; g.shadowBlur = 24; g.fillStyle = "#9dff7a"; g.font = "italic 700 96px Georgia, serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(ampVals.standby ? "Standby" : "Vapor", 256, 146); g.shadowBlur = 0;
+    g.fillStyle = "rgba(200,180,255,0.8)"; g.font = "700 22px Rajdhani"; g.fillText(`VAPOR ${(v * 10).toFixed(1)}   ·   D/R ${(ampVals.amb * 10).toFixed(1)}`, 256, 250);
+    g.restore(); t.needsUpdate = true;
+  } };
+  return m;
+}
 function processAmp(def, root) {
-  const a = { def, root, knobs: {}, toggles: {}, speakers: [] };
+  const a = { def, root, knobs: {}, toggles: {}, sliders: {}, speakers: [], glowMats: [] };
+  // Tubes and lit parts get their own material copies, tinted with this amp's colour,
+  // so power/standby and the heater flicker act on this amp only.
+  const tint = new THREE.Color(def.tube);
+  const own = {};
+  const ownMat = (name) => {
+    if (!own[name]) { own[name] = M[name].clone(); if (own[name].emissive && name !== "Jewel") own[name].emissive.copy(tint); a.glowMats.push({ m: own[name], base: own[name].emissiveIntensity }); }
+    return own[name];
+  };
   root.traverse((o) => {
     if (o.isMesh) {
       o.castShadow = true; o.receiveShadow = true;
       if (o.name.startsWith("WinGlass")) { o.visible = false; return; }
-      const m = M[o.material.name]; if (m) o.material = m;
-      if (o.material.alphaTest > 0) o.castShadow = false;
+      const n = o.material.name;
+      if (["Heater", "TubePlate", "WindowBack", "Jewel", "JewelPurple", "TubeLightGreen", "TubeLightPurple", "WindowBackPurple", "Acrylic", "AcrylicCore", "AcrylicRing", "LedPurple", "VentGlow", "VentGlowGreen"].includes(n) && M[n]) o.material = ownMat(n);
+      else if (n === "Screen") o.material = screenMaterial(a);
+      else if (M[n]) o.material = M[n];
+      if (o.material.alphaTest > 0 || o.material.transparent) o.castShadow = false;
     }
   });
-  for (const c of AMP_CONTROLS) {
+  for (const c of def.knobs) {
     const obj = root.getObjectByName(c.id + "_cap");
-    a.knobs[c.id] = { obj, q0: obj.quaternion.clone(), label: def.id === "american" && c.id === "gain" ? "VOLUME" : c.label };
+    a.knobs[c.id] = { obj, q0: obj.quaternion.clone(), label: c.label };
     obj.traverse((m) => { m.userData.ctl = { kind: "ampKnob", id: c.id }; });
   }
-  for (const [id, n] of [["bright", 2], ["channel", 3]]) {
-    const obj = root.getObjectByName(id + "_pivot");
-    a.toggles[id] = { obj, q0: obj.quaternion.clone(), n };
-    obj.traverse((m) => { m.userData.ctl = { kind: "ampToggle", id }; });
+  for (const t of def.toggles) {
+    const obj = root.getObjectByName(t.id + "_pivot");
+    a.toggles[t.id] = { obj, q0: obj.quaternion.clone(), n: t.n, def: t };
+    obj.traverse((m) => { m.userData.ctl = { kind: "ampToggle", id: t.id }; });
+  }
+  for (const sl of def.sliders || []) {
+    const obj = root.getObjectByName(sl.id + "_cap");
+    a.sliders[sl.id] = { obj, p0: obj.position.clone(), label: sl.label };
+    obj.traverse((m) => { m.userData.ctl = { kind: "ampSlider", id: sl.id }; });
   }
   const P = root.getObjectByName("ShotPanel"), C = root.getObjectByName("ShotCab");
   a.panel = { p: P.position.clone(), w: P.userData.w, h: P.userData.h };
@@ -82,7 +124,7 @@ function processAmp(def, root) {
   a.cabTop = a.cab.p.y + a.cab.h / 2 + 0.006;
   // Light spilling from the tubes, flickering a little like real heaters.
   const tubeObj = root.getObjectByName("tube0_heater") || root.getObjectByName("Heater");
-  a.glow = new THREE.PointLight(0x5cff3a, 0, 1.4, 2);
+  a.glow = new THREE.PointLight(def.tube, 0, 1.4, 2);
   if (tubeObj) { const p = new THREE.Vector3(); tubeObj.getWorldPosition(p); a.glow.position.set(p.x * 0.3, p.y, p.z + 0.05); }
   root.add(a.glow);
   applyAmpVals(a);
@@ -90,6 +132,7 @@ function processAmp(def, root) {
 }
 function applyAmpVals(a) {
   for (const id in a.knobs) { const k = a.knobs[id]; k.obj.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(Z_AXIS, THREE.MathUtils.degToRad(270 * ampVals[id])).multiply(k.q0)); }
+  for (const id in a.sliders) { const sl = a.sliders[id]; sl.obj.position.copy(sl.p0); sl.obj.position.y += (ampVals[id] / 12) * EQ_TRAVEL / 2; }
   for (const id in a.toggles) {
     const t = a.toggles[id], s = ampVals[id];
     const q = t.n === 2 ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), s ? 0.5 : -0.5)
@@ -201,8 +244,11 @@ function cable(a, b, mat, o = {}) {
 const LEFT = new THREE.Vector3(-1, 0, 0), RIGHT = new THREE.Vector3(1, 0, 0), FRONT = new THREE.Vector3(0, 0, 1);
 function jackPos(id, side) {
   const st = PEDAL[id], p = st.grp.position;
+  if (st.jack.top) return new THREE.Vector3(p.x + side * st.jack.x, st.jack.y, p.z + st.jack.z);
   return new THREE.Vector3(p.x + side * (st.def.w / 2 + 0.004), st.jack.y, p.z + st.jack.z);
 }
+const UP = new THREE.Vector3(0, 1, 0);
+const jackDir = (id, side) => (PEDAL[id].jack.top ? UP : side < 0 ? LEFT : RIGHT);
 let micCable = null;
 function rebuildCables() {
   cables.children.slice().forEach((c) => { cables.remove(c); c.traverse((m) => m.geometry?.dispose()); });
@@ -212,14 +258,14 @@ function rebuildCables() {
   cables.add(plug(guitar, new THREE.Vector3(-1, 0.02, 0.35)));
   const ampIn = amp.input.clone(), ampLoop = amp.loop.clone();
   if (pre.length) {
-    cable(guitar, jackPos(pre[0], -1), cableMatG, { da: new THREE.Vector3(1, 0, -0.3), db: LEFT, floor: -0.006, sag: 0.1, la: 0.12, lb: 0.03 });
-    for (let i = 0; i + 1 < pre.length; i++) cable(jackPos(pre[i], 1), jackPos(pre[i + 1], -1), cableMat, { da: RIGHT, db: LEFT, la: 0.004, lb: 0.004, arc: 0.03 });
-    cable(jackPos(pre[pre.length - 1], 1), ampIn, cableMatG, { da: RIGHT, db: FRONT, la: 0.05, lb: 0.12, floor: -0.006, sag: 0.3, midZ: BOARD.z - BOARD.d / 2 - 0.06 });
+    cable(guitar, jackPos(pre[0], -1), cableMatG, { da: new THREE.Vector3(1, 0, -0.3), db: jackDir(pre[0], -1), floor: -0.006, sag: 0.1, la: 0.12, lb: 0.03 });
+    for (let i = 0; i + 1 < pre.length; i++) cable(jackPos(pre[i], 1), jackPos(pre[i + 1], -1), cableMat, { da: jackDir(pre[i], 1), db: jackDir(pre[i + 1], -1), la: 0.006, lb: 0.006, arc: 0.03 });
+    cable(jackPos(pre[pre.length - 1], 1), ampIn, cableMatG, { da: jackDir(pre[pre.length - 1], 1), db: FRONT, la: 0.05, lb: 0.12, floor: -0.006, sag: 0.3, midZ: BOARD.z - BOARD.d / 2 - 0.06 });
   } else cable(guitar, ampIn, cableMatG, { da: new THREE.Vector3(1, 0, -0.3), db: FRONT, floor: -0.006, sag: 0.3, la: 0.15, lb: 0.12 });
   if (loop.length) {
-    cable(ampLoop, jackPos(loop[0], -1), cableMatV, { da: FRONT, db: LEFT, la: 0.1, lb: 0.03, floor: -0.006, sag: 0.3, midZ: BOARD.z - BOARD.d / 2 - 0.05 });
-    for (let i = 0; i + 1 < loop.length; i++) cable(jackPos(loop[i], 1), jackPos(loop[i + 1], -1), cableMat, { da: RIGHT, db: LEFT, la: 0.004, lb: 0.004, arc: 0.03 });
-    cable(jackPos(loop[loop.length - 1], 1), ampLoop.clone().add(new THREE.Vector3(0, -0.007, 0)), cableMatV, { da: RIGHT, db: FRONT, la: 0.05, lb: 0.09, floor: -0.006, sag: 0.3, midZ: BOARD.z - BOARD.d / 2 - 0.1 });
+    cable(ampLoop, jackPos(loop[0], -1), cableMatV, { da: FRONT, db: jackDir(loop[0], -1), la: 0.1, lb: 0.03, floor: -0.006, sag: 0.3, midZ: BOARD.z - BOARD.d / 2 - 0.05 });
+    for (let i = 0; i + 1 < loop.length; i++) cable(jackPos(loop[i], 1), jackPos(loop[i + 1], -1), cableMat, { da: jackDir(loop[i], 1), db: jackDir(loop[i + 1], -1), la: 0.006, lb: 0.006, arc: 0.03 });
+    cable(jackPos(loop[loop.length - 1], 1), ampLoop.clone().add(new THREE.Vector3(0, -0.007, 0)), cableMatV, { da: jackDir(loop[loop.length - 1], 1), db: FRONT, la: 0.05, lb: 0.09, floor: -0.006, sag: 0.3, midZ: BOARD.z - BOARD.d / 2 - 0.1 });
   }
   if (micCable) cable(micCable.a, micCable.b, cableMat, { da: new THREE.Vector3(0, -0.3, 1), db: new THREE.Vector3(1, 0, 0), la: 0.06, lb: 0.1, floor: -0.006, sag: 0.4 });
 }
@@ -252,7 +298,7 @@ function shotSpec(name, arg) {
     const side = s.x <= 0 ? -1 : 1;
     return { tgt: new THREE.Vector3(s.x, s.y, amp.cab.p.z + 0.06), theta: -side * 0.38, phi: Math.PI / 2 - 0.1, box: [0.5, 0.42], ap: 0.01, panel: true };
   }
-  if (name === "pedal") { const st = PEDAL[arg], p = st.grp.position; return { tgt: new THREE.Vector3(p.x, BOARD_TOP + PH, p.z + 0.004), theta: 0, phi: 0.66, box: [st.def.w + 0.04, PD + 0.035], ap: 0.016, panel: true }; }
+  if (name === "pedal") { const st = PEDAL[arg], p = st.grp.position; return { tgt: new THREE.Vector3(p.x, BOARD_TOP + PH, p.z + 0.004), theta: 0, phi: 0.66, box: [Math.max(st.def.w + 0.04, 0.11), (st.def.d || PD) + 0.035], ap: 0.016, panel: true }; }
 }
 function resolveShot(spec) {
   const vfov = THREE.MathUtils.degToRad(camera.fov), aspect = innerWidth / innerHeight;
@@ -326,8 +372,8 @@ canvas.addEventListener("pointerdown", (e) => {
   if (!amp || shotAnim) return;
   const hit = pick(e); downAt = { x: e.clientX, y: e.clientY, hit };
   const c = hit?.object.userData.ctl;
-  if (c && shot.name === "amp" && c.kind === "ampKnob") {
-    drag = { c, y: e.clientY, v0: ampVals[c.id] }; canvas.setPointerCapture(e.pointerId); e.preventDefault(); showValue(c, e);
+  if (c && shot.name === "amp" && (c.kind === "ampKnob" || c.kind === "ampSlider")) {
+    drag = { c, y: e.clientY, v0: c.kind === "ampSlider" ? (ampVals[c.id] + 12) / 24 : ampVals[c.id] }; canvas.setPointerCapture(e.pointerId); e.preventDefault(); showValue(c, e);
   } else if (c && shot.name === "pedal" && c.kind === "pedalCtl" && c.pedal === shot.arg && PEDAL[c.pedal].ctl[c.param].kind !== "bool") {
     drag = { c, y: e.clientY, v0: PEDAL[c.pedal].values[c.param] }; canvas.setPointerCapture(e.pointerId); e.preventDefault(); showValue(c, e);
   } else if (shot.name === "cab" && (c?.kind === "mic" || (hit && zoneOf(hit) === "cab"))) {
@@ -357,7 +403,7 @@ canvas.addEventListener("pointermove", (e) => {
   const hit = pick(e), c = hit?.object.userData.ctl; let cur = "default";
   if (shot.name === "wide" && hit) cur = hit.object.userData.pedalId ? "grab" : (c?.kind === "addSlot" ? "pointer" : "zoom-in");
   else if (shot.name === "cab" && hit && (c?.kind === "mic" || zoneOf(hit) === "cab")) cur = "move";
-  else if (c && (c.kind === "ampKnob" || c.kind === "pedalCtl")) cur = c.kind === "pedalCtl" && PEDAL[c.pedal].ctl[c.param].kind === "bool" ? "pointer" : "ns-resize";
+  else if (c && (c.kind === "ampKnob" || c.kind === "ampSlider" || c.kind === "pedalCtl")) cur = c.kind === "pedalCtl" && PEDAL[c.pedal].ctl[c.param].kind === "bool" ? "pointer" : "ns-resize";
   else if (c && (c.kind === "ampToggle" || c.kind === "footswitch" || c.kind === "addSlot")) cur = "pointer";
   else if (hit) cur = "zoom-in";
   canvas.style.cursor = cur;
@@ -371,15 +417,15 @@ canvas.addEventListener("pointerup", (e) => {
 });
 canvas.addEventListener("dblclick", (e) => {
   const hit = pick(e), c = hit?.object.userData.ctl; if (!c) return;
-  if (c.kind === "ampKnob" && shot.name === "amp") { setCtl(c, 0.5); showValue(c, e); hideBubble(800); }
+  if ((c.kind === "ampKnob" || c.kind === "ampSlider") && shot.name === "amp") { setCtl(c, 0.5); showValue(c, e); hideBubble(800); }
   if (c.kind === "pedalCtl" && shot.name === "pedal") { const par = PEDAL[c.pedal].ctl[c.param].par; if (!par.isBool) { setCtl(c, toNorm(par, par.def)); showValue(c, e); hideBubble(800); } }
 });
 canvas.addEventListener("wheel", (e) => {
   if (shot?.name === "cab") { e.preventDefault(); cabState.dist = THREE.MathUtils.clamp(cabState.dist + Math.sign(e.deltaY) * 0.03, 0, 1); placeMic(); rebuildCables(); refreshCabPanel(); showBubble(e, `Distanza ${micCm()} cm`); hideBubble(700); return; }
   const hit = pick(e), c = hit?.object.userData.ctl; if (!c) return;
-  const ok = (c.kind === "ampKnob" && shot.name === "amp") || (c.kind === "pedalCtl" && shot.name === "pedal" && shot.arg === c.pedal && PEDAL[c.pedal].ctl[c.param].kind !== "bool");
+  const ok = ((c.kind === "ampKnob" || c.kind === "ampSlider") && shot.name === "amp") || (c.kind === "pedalCtl" && shot.name === "pedal" && shot.arg === c.pedal && PEDAL[c.pedal].ctl[c.param].kind !== "bool");
   if (!ok) return; e.preventDefault();
-  const v = c.kind === "ampKnob" ? ampVals[c.id] : PEDAL[c.pedal].values[c.param];
+  const v = c.kind === "ampKnob" ? ampVals[c.id] : c.kind === "ampSlider" ? (ampVals[c.id] + 12) / 24 : PEDAL[c.pedal].values[c.param];
   const par = c.kind === "pedalCtl" ? PEDAL[c.pedal].ctl[c.param].par : null, step = par?.choices ? 1 / (par.choices.length - 1) : 0.02;
   setCtl(c, THREE.MathUtils.clamp(v - Math.sign(e.deltaY) * step, 0, 1)); showValue(c, e); hideBubble(700);
 }, { passive: false });
@@ -387,10 +433,12 @@ const micCm = () => Math.round(1 + cabState.dist * 29);
 
 function setCtl(c, v) {
   if (c.kind === "ampKnob") { ampVals[c.id] = v; applyAmpVals(amp); }
+  else if (c.kind === "ampSlider") { ampVals[c.id] = Math.round((v * 24 - 12) * 2) / 2; applyAmpVals(amp); }
   else { const st = PEDAL[c.pedal], par = st.ctl[c.param].par; st.values[c.param] = par.choices ? Math.round(v * (par.choices.length - 1)) / (par.choices.length - 1) : v; PF.apply(st); refreshPanel(); }
 }
 function showValue(c, e) {
   if (c.kind === "ampKnob") showBubble(e, `${amp.knobs[c.id].label}  ${(ampVals[c.id] * 10).toFixed(1)}`);
+  else if (c.kind === "ampSlider") showBubble(e, `EQ ${amp.sliders[c.id].label}  ${ampVals[c.id] > 0 ? "+" : ""}${ampVals[c.id].toFixed(1)} dB`);
   else { const st = PEDAL[c.pedal], par = st.ctl[c.param].par; showBubble(e, `${par.name}  ${fmt(par, toValue(par, st.values[c.param]))}`); }
 }
 function click(e, hit) {
@@ -403,8 +451,8 @@ function click(e, hit) {
   }
   if (shot.name === "amp") {
     if (c?.kind === "ampToggle") {
-      ampVals[c.id] = (ampVals[c.id] + 1) % amp.toggles[c.id].n; applyAmpVals(amp);
-      showBubble(e, c.id === "bright" ? `BRIGHT  ${ampVals.bright ? "ON" : "OFF"}` : `CHANNEL  ${["CLEAN", "CRUNCH", "LEAD"][ampVals.channel]}`); hideBubble(900); return;
+      const t = amp.toggles[c.id]; ampVals[c.id] = (ampVals[c.id] + 1) % t.n; applyAmpVals(amp);
+      showBubble(e, `${t.def.label}  ${t.def.states[ampVals[c.id]]}`); hideBubble(900); return;
     }
     if (!hit) return back();
     if (hit.object.userData.pedalId) return openPedal(hit.object.userData.pedalId);
@@ -426,8 +474,11 @@ function click(e, hit) {
     if (!hit) return back();
   }
 }
+const LOOP_ONLY = new Set(["delay", "reverb"]);
 function dropPedal(st) {
-  const p = st.grp.position, row = p.z > BOARD.z ? "pre" : "loop";
+  const p = st.grp.position;
+  let row = p.z > BOARD.z ? "pre" : "loop";
+  if (row === "pre" && LOOP_ONLY.has(st.def.id)) { row = "loop"; say(st.def.name + " lavora solo nel loop FX, dopo l'ampli: lì ha senso (le ripetizioni non vengono distorte)."); }
   const from = chain[st.row]; from.splice(from.indexOf(st.def.id), 1);
   const idx = chain[row].map((id) => PEDAL[id].grp.position.x).filter((x) => x < p.x).length;
   if (rowLayout(row, [...chain[row], st.def.id]).free < -0.001) { from.splice(st.index, 0, st.def.id); say("Quella fila è piena: sposta prima un altro pedale."); }
@@ -517,6 +568,7 @@ function openPedalCatalog(row) {
 }
 function addPedal(id, row) {
   const st = pedalState(id); PF.apply(st);
+  if (row === "pre" && LOOP_ONLY.has(id)) row = "loop";
   if (rowLayout(row, [...chain[row], id]).free < -0.001) { say("Questa fila è piena."); return; }
   chain[row].push(id); layoutChain(); setTimeout(() => openPedal(id), 480);
 }
@@ -550,7 +602,7 @@ function reorder(id, a) {
   const st = PEDAL[id], arr = chain[st.row], i = arr.indexOf(id);
   if (a === "left" && i > 0) { arr.splice(i, 1); arr.splice(i - 1, 0, id); }
   else if (a === "right" && i < arr.length - 1) { arr.splice(i, 1); arr.splice(i + 1, 0, id); }
-  else if (a === "row") { const to = st.row === "pre" ? "loop" : "pre"; if (rowLayout(to, [...chain[to], id]).free < -0.001) return say("L'altra fila è piena."); arr.splice(i, 1); chain[to].push(id); }
+  else if (a === "row") { const to = st.row === "pre" ? "loop" : "pre"; if (to === "pre" && LOOP_ONLY.has(id)) return say(st.def.name + " lavora solo nel loop FX, dopo l'ampli."); if (rowLayout(to, [...chain[to], id]).free < -0.001) return say("L'altra fila è piena."); arr.splice(i, 1); chain[to].push(id); }
   else if (a === "remove") { arr.splice(i, 1); boardGroup.remove(st.grp); layoutChain(); back(); return; }
   layoutChain();
   setTimeout(() => { if (panel.dataset.pedal === id) { goShot("pedal", id); refreshPanel(); } }, 580);
@@ -647,9 +699,23 @@ function frame(now) {
     if (k >= 1) anims.splice(i, 1);
   }
   if (anims.length) { rebuildCables(); rebuildCables.pending = true; } else if (rebuildCables.pending) { rebuildCables.pending = false; rebuildCables(); }
+  const mm = PEDAL.mutant;
+  if (mm?.extras?.tubeGlow) {
+    // The tube pulses with the LFO (in the plugin the phase comes from the audio engine).
+    const hz = toValue(mm.def.params[1], mm.values.speed);
+    mm.phase = ((mm.phase || 0) + hz * (now - (mm.last || now)) / 1000) % 1; mm.last = now;
+    const k = mm.on ? 1.2 + 3.8 * (0.5 + 0.5 * Math.sin(mm.phase * Math.PI * 2)) : 0.25;
+    mm.extras.tubeGlow[0].emissiveIntensity = k; mm.extras.tubeGlow[1].emissiveIntensity = k * 0.15;
+  }
   if (amp) {
     const fl = 1 + Math.sin(now / 700) * 0.05 + Math.sin(now / 53) * 0.012;
-    amp.glow.intensity = 0.05 * fl; M.Heater.emissiveIntensity = 6 * fl;
+    // POWER off = everything dark; STANDBY = heaters stay warm (dim) but no signal.
+    const on = amp.def.id !== "vapor" || ampVals.power ? 1 : 0;
+    const warm = on * (amp.def.id === "vapor" && ampVals.standby ? 0.35 : 1);
+    amp.powerLevel = (amp.powerLevel ?? warm) + (warm - (amp.powerLevel ?? warm)) * 0.05;
+    amp.glow.intensity = 0.05 * fl * amp.powerLevel;
+    for (const g of amp.glowMats) g.m.emissiveIntensity = g.base * amp.powerLevel * (g.m.name === "Heater" ? fl : 1);
+    if (amp.screen) amp.screen.draw(t, amp.powerLevel);
   }
   stage.update(t);
   updateCamera(now);
@@ -672,6 +738,6 @@ manager.onLoad = async () => {
 };
 loadAmp(AMPS[0], manager);
 
-window.__rig = { placeAmp, goShot, openPedal, openAmp, openCab, back, chain, PEDAL, addPedal, reorder, ampVals, cabState, placeMic,
+window.__rig = { setPass: (k, v) => { stage[k].enabled = v; }, placeAmp, goShot, openPedal, openAmp, openCab, back, chain, PEDAL, addPedal, reorder, ampVals, cabState, placeMic,
   screenOf: (o) => { const v = new THREE.Vector3(); o.getWorldPosition(v); v.project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; },
   get amp() { return amp; }, stage, scene, setQuality: (q) => { quality = q; applyQuality(); } };

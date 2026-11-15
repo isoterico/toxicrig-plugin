@@ -166,7 +166,7 @@ def export(path, knob_ids, toggle_ids):
     for o in [o for o in bpy.data.objects if o.type == "MESH"]:
         bpy.context.view_layer.objects.active = o
         for m in list(o.modifiers): bpy.ops.object.modifier_apply(modifier=m.name)
-    for o in [o for o in bpy.data.objects if o.type == "MESH"]:
+    for o in [o for o in bpy.data.objects if o.type == "MESH" and not o.get("keep_uv")]:
         bm = bmesh.new(); bm.from_mesh(o.data)
         uv = bm.loops.layers.uv.verify(); mw = o.matrix_world; nmat = mw.to_3x3().inverted().transposed()
         for f in bm.faces:
@@ -185,3 +185,67 @@ def export(path, knob_ids, toggle_ids):
     json.dump(j, open(path, "w"), separators=(",", ":"))
     os.remove(tmp)
     print("exported", path, os.path.getsize(path))
+
+# ------------------------------------------------------------------ shared 2x12 cab
+def cab_2x12(CW=0.70, CH=0.46, CD=0.30, wheels=True, tolex="Tolex", corner="CornerMetal", grille="HexMesh",
+             badge_mat="SteelPlate", badge_text="EngraveDark", frame=None):
+    """Closed-back 2x12 with a perforated front, two speakers behind it and a badge.
+    Returns the cab top height."""
+    WH = 0.06 if wheels else 0.016
+    cz0 = WH
+    box("Cab", (CW, CD, CH), (0, 0, cz0 + CH / 2), tolex, bevel=0.014)
+    for (sx, sz, lx, lz) in [(CW - 0.036, 0.016, 0, cz0 + CH - 0.026), (CW - 0.036, 0.016, 0, cz0 + 0.026),
+                             (0.016, CH - 0.036, -CW / 2 + 0.026, cz0 + CH / 2), (0.016, CH - 0.036, CW / 2 - 0.026, cz0 + CH / 2)]:
+        box("CabFrame", (sx, 0.012, sz), (lx, -CD / 2 + 0.002, lz), frame or corner, bevel=0.003)
+    box("CabBaffle", (CW - 0.06, 0.01, CH - 0.06), (0, -CD / 2 + 0.03, cz0 + CH / 2), "Baffle")
+    for i, x in enumerate((-0.165, 0.165)):
+        speaker("spk%d" % i, x, cz0 + CH / 2 - 0.005, -CD / 2 + 0.024, 0.148)
+    bpy.ops.mesh.primitive_plane_add(size=1, location=(0, -CD / 2 - 0.002, cz0 + CH / 2), rotation=(math.pi / 2, 0, 0))
+    g = bpy.context.active_object; g.name = "CabGrille"; g.scale = (CW - 0.05, CH - 0.05, 1); bpy.ops.object.transform_apply(scale=True)
+    g.data.materials.append(mat(grille))
+    box("CabBadge", (0.17, 0.006, 0.042), (0.17, -CD / 2 - 0.006, cz0 + 0.1), badge_mat, bevel=0.004)
+    text("CabBadgeText", "ToxicRig", 0.026, (0.18, -CD / 2 - 0.0095, cz0 + 0.099), badge_text, FONT_LOGO, extrude=0.0004)
+    emblem("CabEmblem", (0.103, -CD / 2 - 0.0094, cz0 + 0.1), 0.03)
+    marker("ShotCab", (0, -CD / 2, cz0 + CH / 2), w=CW, h=CH)
+    corners(CW, CD, cz0 + 0.004, cz0 + CH - 0.004, m=corner)
+    if wheels:
+        for x in (-CW / 2 + 0.06, CW / 2 - 0.06):
+            for y in (-CD / 2 + 0.06, CD / 2 - 0.06):
+                box("CasterPlate", (0.05, 0.05, 0.004), (x, y, cz0 - 0.002), "CornerMetal", bevel=0.002)
+                cyl("CasterStem", 0.006, 0.02, (x, y, cz0 - 0.014), "Chrome", rot=(0, 0, 0))
+                cyl("CasterWheel", 0.024, 0.016, (x, y + 0.018, 0.024), "Rubber", rot=(0, math.pi / 2, 0), verts=40, bevel=0.003)
+                cyl("CasterHub", 0.01, 0.018, (x, y + 0.018, 0.024), "Chrome", rot=(0, math.pi / 2, 0), verts=24)
+    else:
+        for x in (-CW / 2 + 0.07, CW / 2 - 0.07):
+            for y in (-CD / 2 + 0.05, CD / 2 - 0.05):
+                cyl("Foot", 0.016, 0.016, (x, y, cz0 / 2), "Rubber", rot=(0, 0, 0), bevel=0.003)
+    return cz0 + CH
+
+def emblem(name, loc, size, m="Emblem"):
+    """A square decal facing -Y; the engine paints the hazard emblem on it."""
+    bpy.ops.mesh.primitive_plane_add(size=size, location=loc, rotation=(math.pi / 2, 0, 0))
+    o = bpy.context.active_object; o.name = name; o.data.materials.append(mat(m))
+    # UVs 0..1 across the decal (kept by export: only box-mapped when not named Emblem)
+    o["keep_uv"] = 1
+    return o
+
+def slider(cid, x, z, fy, travel=0.032, m="BrassKnob"):
+    """Vertical fader: slot in the panel, cap centred at 0 dB. Moves along world Z."""
+    box(cid + "_slot", (0.0026, 0.002, travel + 0.008), (x, fy - 0.0008, z), "Baffle")
+    cap = box(cid + "_cap", (0.009, 0.009, 0.0055), (x, fy - 0.0055, z), m, bevel=0.0012)
+    box(cid + "_line", (0.0092, 0.0004, 0.0008), (x, fy - 0.0102, z), "EngraveDark")
+    parent(bpy.data.objects[cid + "_line"], cap)
+    for k in range(9):
+        zz = z - travel / 2 + travel * k / 8
+        box("tick", (0.003 if k % 4 else 0.005, 0.0004, 0.0006), (x + 0.0065, fy - 0.0004, zz), "EngraveWhite")
+    return cap
+
+def knob_acrylic(cid, x, z, fy, r=0.0118):
+    """Clear acrylic knob lit from inside (purple), metal shaft cap, pointer line."""
+    skirt = cyl(cid + "_skirt", r * 1.1, 0.004, (x, fy - 0.002, z), "AcrylicRing", verts=64, bevel=0.0008)
+    cap = cyl(cid + "_cap", r, 0.018, (x, fy - 0.013, z), "Acrylic", verts=48, bevel=0.002, r2=r * 0.92)
+    core = cyl(cid + "_core", r * 0.42, 0.014, (x, fy - 0.011, z), "AcrylicCore", verts=24)
+    top = cyl(cid + "_top", r * 0.5, 0.0012, (x, fy - 0.0226, z), "Nickel", verts=48, bevel=0.0004)
+    ptr = box(cid + "_ptr", (r * 0.12, 0.0012, r * 0.55), (x, fy - 0.0228, z + r * 0.62), "PointerWhite")
+    for o in (skirt, core, top, ptr): parent(o, cap)
+    return cap

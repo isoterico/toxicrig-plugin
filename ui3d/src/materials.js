@@ -68,6 +68,60 @@ export function makeMaterials(renderer, manager) {
     VentGlow: S({ color: 0x050308, emissive: 0x7a3cff, emissiveIntensity: 0.9, roughness: 0.8 }),
     Jewel: S({ color: 0x103a10, emissive: 0x39ff14, emissiveIntensity: 4, roughness: 0.1 }),
   };
+  // --- Overlord / Vapor-30 finishes
+  Object.assign(M, {
+    AntiqueBrass: P({ color: 0xb08a4a, metalness: 1, roughness: 0.6, roughnessMap: grunge(0.1), envMapIntensity: 1.6 }),
+    BurnishedBrass: P({ color: 0x5a4424, metalness: 1, roughness: 0.75, roughnessMap: grunge(0.08), envMapIntensity: 1.2 }),
+    PanelBronze: P({ color: 0x3d311f, metalness: 0.95, roughness: 0.8, roughnessMap: brushedR(0.2), normalMap: brushedN(0.2), normalScale: new THREE.Vector2(0.2, 0.2), envMapIntensity: 1.4 }),
+    KnobCopper: P({ color: 0xb8704a, metalness: 1, roughness: 0.5, roughnessMap: grunge(0.06), envMapIntensity: 1.5 }),
+    KnobDarkCopper: P({ color: 0x6a3e2a, metalness: 1, roughness: 0.55, roughnessMap: grunge(0.06), envMapIntensity: 1.4 }),
+    PointerGreen: S({ color: 0x0a2a06, emissive: 0x39ff14, emissiveIntensity: 3 }),
+    VentGlowGreen: S({ color: 0x030603, emissive: 0x2a9a14, emissiveIntensity: 0.5, roughness: 0.8 }),
+    TubeLightGreen: S({ color: 0x0a2a06, emissive: 0x46ff2a, emissiveIntensity: 5 }),
+    TubeLightPurple: S({ color: 0x1a0a2a, emissive: 0xb050ff, emissiveIntensity: 5 }),
+    WindowBackPurple: S({ color: 0x080510, emissive: 0x6a2ab0, emissiveIntensity: 0.3, roughness: 0.7 }),
+    AluBrushed: P({ color: 0xc9cbd0, metalness: 1, roughness: 0.75, roughnessMap: brushedR(0.25), normalMap: brushedN(0.25), normalScale: new THREE.Vector2(0.3, 0.3), anisotropy: 0.8, envMapIntensity: 1.3 }),
+    AluPanel: P({ color: 0xd5d7dc, metalness: 1, roughness: 0.7, roughnessMap: brushedR(0.15), normalMap: brushedN(0.15), normalScale: new THREE.Vector2(0.25, 0.25), anisotropy: 0.9, envMapIntensity: 1.4 }),
+    CornerPurple: P({ color: 0x5a2a9a, metalness: 0.9, roughness: 0.4, roughnessMap: grunge(0.1), clearcoat: 0.4, envMapIntensity: 1.3 }),
+    PurplePlate: P({ color: 0x6a3aa8, metalness: 0.9, roughness: 0.35, roughnessMap: brushedR(0.1), normalMap: brushedN(0.1), envMapIntensity: 1.4 }),
+    EngraveLight: S({ color: 0xe6dcff, roughness: 0.6 }),
+    LedPurple: S({ color: 0x1a0a2a, emissive: 0xb050ff, emissiveIntensity: 4 }),
+    JewelPurple: S({ color: 0x1a0a2a, emissive: 0xb050ff, emissiveIntensity: 4, roughness: 0.1 }),
+    Acrylic: P({ color: 0xe8dcff, roughness: 0.08, transmission: 0.85, thickness: 0.01, ior: 1.49, emissive: 0x8a40ff, emissiveIntensity: 0.6, envMapIntensity: 1.2 }),
+    AcrylicRing: P({ color: 0xd8c8ff, roughness: 0.15, transmission: 0.6, thickness: 0.004, emissive: 0x9b4dff, emissiveIntensity: 1.6 }),
+    AcrylicCore: S({ color: 0x2a1040, emissive: 0xb050ff, emissiveIntensity: 2.5 }),
+  });
+  M.HexMeshPurple = M.HexMesh.clone(); M.HexMeshPurple.color = new THREE.Color(0x7a4ac0);
+  M.Emblem = new THREE.MeshStandardMaterial({ map: emblemTexture("#c9a25a", "rgba(0,0,0,0)"), transparent: true, metalness: 1, roughness: 0.45, envMapIntensity: 1.5, polygonOffset: true, polygonOffsetFactor: -2 });
   M.Glass.userData.glass = true;
   return { M, tex };
+}
+
+// Biohazard-style hazard emblem drawn with circles (original drawing, no artwork copied).
+export function drawHazard(g, cx, cy, R, color) {
+  const c = document.createElement("canvas"); c.width = c.height = Math.ceil(R * 2.4); const k = c.getContext("2d");
+  const o = c.width / 2;
+  k.fillStyle = color;
+  for (let i = 0; i < 3; i++) {
+    const a = -Math.PI / 2 + i * Math.PI * 2 / 3;
+    k.beginPath(); k.arc(o + Math.cos(a) * R * 0.42, o + Math.sin(a) * R * 0.42, R * 0.52, 0, Math.PI * 2); k.fill();
+  }
+  k.globalCompositeOperation = "destination-out";
+  for (let i = 0; i < 3; i++) {
+    const a = -Math.PI / 2 + i * Math.PI * 2 / 3;
+    k.beginPath(); k.arc(o + Math.cos(a) * R * 0.62, o + Math.sin(a) * R * 0.62, R * 0.38, 0, Math.PI * 2); k.fill();
+  }
+  k.beginPath(); k.arc(o, o, R * 0.14, 0, Math.PI * 2); k.fill();
+  k.lineWidth = R * 0.06;
+  for (let i = 0; i < 3; i++) { const a = Math.PI / 2 + i * Math.PI * 2 / 3; k.beginPath(); k.moveTo(o, o); k.lineTo(o + Math.cos(a) * R * 0.5, o + Math.sin(a) * R * 0.5); k.stroke(); }
+  k.globalCompositeOperation = "source-over";
+  k.strokeStyle = color; k.lineWidth = R * 0.07; k.beginPath(); k.arc(o, o, R * 0.33, 0, Math.PI * 2); k.stroke();
+  k.globalCompositeOperation = "destination-out"; k.lineWidth = R * 0.1;
+  for (let i = 0; i < 3; i++) { const a = Math.PI / 2 + i * Math.PI * 2 / 3; k.beginPath(); k.moveTo(o + Math.cos(a) * R * 0.25, o + Math.sin(a) * R * 0.25); k.lineTo(o + Math.cos(a) * R * 0.42, o + Math.sin(a) * R * 0.42); k.stroke(); }
+  g.drawImage(c, cx - o, cy - o);
+}
+function emblemTexture(color, bg) {
+  const c = document.createElement("canvas"); c.width = c.height = 256; const g = c.getContext("2d");
+  g.fillStyle = bg; g.fillRect(0, 0, 256, 256); drawHazard(g, 128, 128, 104, color);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
