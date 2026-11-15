@@ -148,9 +148,9 @@ def drum_kit(c):
     cyl("Throne", 0.17, 0.08, (x - 0.1, y + 0.62, 0.5), "Rubber", rot=(0, 0, 0), verts=48, bevel=0.02)
     cyl("ThronePost", 0.015, 0.46, (x - 0.1, y + 0.62, 0.23), "Chrome", rot=(0, 0, 0), verts=12)
 
-guitar((-0.78, 0.22, 0.0))
+# guitar removed until it meets the quality bar
 road_case((0.98, -0.05))
 box("CaseTop", (0.0001, 0.0001, 0.0001), (0, 0, -1), "CaseBlack")
-wedge((-0.95, 1.25))
-drum_kit((1.25, -1.0))
+# wedge removed
+# drums removed
 export("/home/claude/stage3d/public/models/props.json", [], [])

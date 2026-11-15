@@ -4,6 +4,9 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { PEDALS, AMPS, CABS, MICS, toValue, toNorm, fmt } from "./pedals.js";
 import { makeMaterials } from "./materials.js";
+import { overlordPanel, overlordBadge } from "./art.js";
+import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
+RectAreaLightUniformsLib.init();
 import { buildStage } from "./stage.js";
 import { pedalFactory, PH, PD, BOARD_TOP } from "./pedal3d.js";
 import { micFactory } from "./mic3d.js";
@@ -33,7 +36,8 @@ let quality = (() => { try { return localStorage.getItem("tr.quality") || (MOBIL
 function applyQuality() {
   const hi = quality === "alta";
   renderer.setPixelRatio(Math.min(devicePixelRatio, hi ? 2 : 1.25));
-  stage.gtao.enabled = hi; stage.bokeh.enabled = hi;
+  // AO is baked per object; screen-space AO and lens blur are off: they cost sharpness.
+  stage.gtao.enabled = false; stage.bokeh.enabled = false;
   stage.L.key.shadow.mapSize.set(hi ? 2048 : 1024, hi ? 2048 : 1024); if (stage.L.key.shadow.map) { stage.L.key.shadow.map.dispose(); stage.L.key.shadow.map = null; }
   $("#quality").textContent = "Qualità: " + (hi ? "Alta" : "Media");
   try { localStorage.setItem("tr.quality", quality); } catch {}
@@ -64,6 +68,17 @@ function applyAO(root, url) {
       const g = root.userData.amp?.glowMats.find((x) => x.m === m); if (g) g.m = c; }
     o.material = cache.get(m);
   });
+}
+const ART = {};
+function artMaterial(def, o) {
+  const key = def.id + o.name;
+  if (!ART[key]) {
+    const L = o.userData.layout ? JSON.parse(o.userData.layout) : null;
+    if (o.name.startsWith("Art_panel") && def.id === "overlord") ART[key] = overlordPanel(L);
+    else if (o.name.startsWith("Art_badge") && def.id === "overlord") ART[key] = overlordBadge(o.userData.w, o.userData.h);
+    else ART[key] = M.PanelBronze;
+  }
+  return ART[key];
 }
 // Vapor-30 screen: neon logo whose rings breathe with the VAPOR amount (redrawn ~30 fps).
 function screenMaterial(a) {
@@ -107,6 +122,7 @@ function processAmp(def, root) {
       const n = o.material.name;
       if (["Heater", "TubePlate", "WindowBack", "Jewel", "JewelPurple", "TubeLightGreen", "TubeLightPurple", "WindowBackPurple", "Acrylic", "AcrylicCore", "AcrylicRing", "LedPurple", "VentGlow", "VentGlowGreen"].includes(n) && M[n]) o.material = ownMat(n);
       else if (n === "Screen") o.material = screenMaterial(a);
+      else if (n.startsWith("Art_")) o.material = artMaterial(def, o);
       else if (M[n]) o.material = M[n];
       if (o.material.alphaTest > 0 || o.material.transparent) o.castShadow = false;
     }
@@ -141,6 +157,13 @@ function processAmp(def, root) {
   a.glow = new THREE.PointLight(def.tube, 0, 1.4, 2);
   if (tubeObj) { const p = new THREE.Vector3(); tubeObj.getWorldPosition(p); a.glow.position.set(p.x * 0.3, p.y, p.z + 0.05); }
   root.add(a.glow);
+  const wl = root.getObjectByName("WinLight");
+  if (wl) {
+    // LED bar inside the window: a real area light washing down over the tubes.
+    a.winLight = new THREE.RectAreaLight(def.tube, 0, wl.userData.w, 0.012);
+    a.winLight.position.copy(wl.position); a.winLight.lookAt(wl.position.clone().add(new THREE.Vector3(0, -1, -0.15)));
+    root.add(a.winLight);
+  }
   applyAmpVals(a);
   AMP[def.id] = a; return a;
 }
@@ -311,6 +334,7 @@ function shotSpec(name, arg) {
     const s = b.getBoundingSphere(new THREE.Sphere());
     return { tgt: s.center.clone().add(new THREE.Vector3(0, -0.02, 0)), theta: -0.38, phi: 1.16, sphere: s.radius * 0.86, ap: 0.003 };
   }
+  if (name === "hero") { const b = amp.box; const c = new THREE.Vector3(0, amp.panel.p.y, amp.panel.p.z); return { tgt: c, theta: -0.3, phi: Math.PI / 2 - 0.04, box: [amp.panel.w * 1.18, amp.panel.h * 1.25], ap: 0.006 }; }
   if (name === "amp") return { tgt: amp.panel.p.clone(), theta: 0.0, phi: Math.PI / 2 - 0.05, box: [amp.panel.w + 0.03, amp.panel.h + 0.04], ap: 0.012 };
   if (name === "cab") {
     const s = amp.speakers[0];
@@ -368,6 +392,7 @@ function updateCamera(now) {
   const close = shot && shot.name !== "wide" && shot.name !== "empty" ? 1 : 0;
   camFill += (close - camFill) * 0.05;
   const cl = stage.L.cam; cl.position.copy(camera.position).add(new THREE.Vector3(-0.15, 0.35, 0)); cl.target.position.copy(cam.tgt); cl.intensity = 10 * camFill;
+  if (window.__noCam) cl.intensity = 0;
   const u = stage.bokeh.uniforms; u.focus.value = camera.position.distanceTo(focusPoint); u.aperture.value = aperture; u.maxblur.value = 0.009;
 }
 addEventListener("pointermove", (e) => { sway.tx = (e.clientX / innerWidth - 0.5) * 2; sway.ty = (e.clientY / innerHeight - 0.5) * 2; });
@@ -780,6 +805,7 @@ function frame(now) {
     const warm = on * (amp.def.id === "vapor" && ampVals.standby ? 0.35 : 1);
     amp.powerLevel = (amp.powerLevel ?? warm) + (warm - (amp.powerLevel ?? warm)) * 0.05;
     amp.glow.intensity = 0.05 * fl * amp.powerLevel;
+    if (amp.winLight) amp.winLight.intensity = 5 * amp.powerLevel * fl;
     for (const g of amp.glowMats) g.m.emissiveIntensity = g.base * amp.powerLevel * (g.m.name === "Heater" ? fl : 1);
     if (amp.screen) amp.screen.draw(t, amp.powerLevel);
   }
@@ -802,6 +828,7 @@ manager.onLoad = async () => {
   // Load the other two amps in the background so the catalogue opens instantly.
   for (const a of AMPS) if (!AMP[a.id]) loadAmp(a, new THREE.LoadingManager()).then((x) => { thumbs[a.id] = ampThumb(x); }).catch(() => {});
   const auto = location.hash.match(/#auto(?:=(\w+))?/); if (auto) placeAmp(auto[1] || "british30");
+  if (/[?&]clean/.test(location.search)) document.body.classList.add("clean");
 };
 loadAmp(AMPS[0], manager);
 // Props: guitar on its stand, road case, monitor wedge, drum kit.

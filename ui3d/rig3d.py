@@ -288,3 +288,65 @@ def knob_acrylic(cid, x, z, fy, r=0.0118):
     ptr = box(cid + "_ptr", (r * 0.12, 0.0012, r * 0.55), (x, fy - 0.0228, z + r * 0.62), "PointerWhite")
     for o in (skirt, core, top, ptr): parent(o, cap)
     return cap
+
+def knurl_knob(cid, x, z, fy, r, body_mat, top_mat="KnobTopBrushed", led_mat=None, teeth=36, h=0.019):
+    """Knurled metal knob (real teeth), brushed top insert, optional LED dot. Faces -Y."""
+    bm = bmesh.new()
+    n = teeth * 2
+    ring = []
+    for i in range(n):
+        a = 2 * math.pi * i / n
+        rr = r if i % 2 == 0 else r * 0.955
+        ring.append((rr * math.cos(a), rr * math.sin(a)))
+    bot = [bm.verts.new((px, py, 0)) for px, py in ring]
+    top = [bm.verts.new((px * 0.97, py * 0.97, h)) for px, py in ring]
+    for i in range(n):
+        j = (i + 1) % n
+        bm.faces.new((bot[i], bot[j], top[j], top[i]))
+    bm.faces.new(list(reversed(bot))); bm.faces.new(top)
+    me = bpy.data.meshes.new(cid + "_cap"); bm.to_mesh(me); bm.free()
+    cap = bpy.data.objects.new(cid + "_cap", me); link(cap)
+    cap.location = (x, fy - 0.0005, z); cap.rotation_euler = (math.pi / 2, 0, 0)
+    me.materials.append(mat(body_mat))
+    bpy.context.view_layer.objects.active = cap
+    mod = cap.modifiers.new("bev", "BEVEL"); mod.width = 0.0009; mod.segments = 2; mod.limit_method = "ANGLE"
+    bpy.ops.object.shade_auto_smooth()
+    # bmesh local +Z = knob axis; rotation (pi/2,0,0) maps +Z to -Y (towards the player)
+    top_disc = cyl(cid + "_top", r * 0.78, 0.0014, (x, fy - 0.0005 - h - 0.0005, z), top_mat, verts=64, bevel=0.0005)
+    skirt = cyl(cid + "_skirt", r * 1.12, 0.0025, (x, fy - 0.0018, z), body_mat, verts=64, bevel=0.0008)
+    parent(top_disc, cap); parent(skirt, cap)
+    if led_mat:
+        led = cyl(cid + "_led", r * 0.13, 0.001, (x, fy - h - 0.0016, z + r * 0.55), led_mat, verts=16)
+        parent(led, cap)
+    else:
+        ptr = box(cid + "_ptr", (r * 0.1, 0.0008, r * 0.45), (x, fy - h - 0.0016, z + r * 0.5), "EngraveDark")
+        parent(ptr, cap)
+    return cap
+
+def power_tube(prefix, x, y, z, h=0.1, r=0.0135):
+    """EL34-style bottle: base, straight body, shoulder, dome; plates, micas, getter inside."""
+    cyl(prefix + "_base", r * 1.02, 0.016, (x, y, z + 0.008), "Bakelite", rot=(0, 0, 0), verts=40, bevel=0.0015)
+    cyl(prefix + "_key", r * 0.25, 0.006, (x, y, z - 0.002), "Bakelite", rot=(0, 0, 0), verts=12)
+    prof = [(r * 0.98, 0.0), (r, 0.004), (r, h * 0.55), (r * 1.06, h * 0.68), (r * 1.0, h * 0.82), (r * 0.82, h * 0.93), (r * 0.45, h * 0.99), (0.0, h * 1.0)]
+    lathe(prefix + "_glass", prof, (x, y, z + 0.016), "Glass", rot=(0, 0, 0), steps=48)
+    cyl(prefix + "_pip", 0.0018, 0.004, (x, y, z + 0.016 + h + 0.0015), "Glass", rot=(0, 0, 0), verts=12)
+    zc = z + 0.016 + h * 0.42
+    for sx in (-1, 1):
+        box(prefix + "_plate", (r * 0.75, 0.0012, h * 0.42), (x + sx * r * 0.18, y, zc), "TubePlate")
+    box(prefix + "_plateSide", (0.0012, r * 0.8, h * 0.4), (x, y, zc), "TubePlate")
+    for dz in (-h * 0.23, h * 0.23):
+        cyl(prefix + "_mica", r * 0.88, 0.0008, (x, y, zc + dz), "Mica", rot=(0, 0, 0), verts=32)
+    cyl(prefix + "_heater", 0.0018, h * 0.36, (x, y, zc), "Heater", rot=(0, 0, 0), verts=10)
+    sphere(prefix + "_getter", r * 0.7, (x, y, z + 0.016 + h * 0.86), "Getter", scale=(1, 1, 0.55))
+    for k in range(4):
+        a = k * math.pi / 2 + 0.4
+        cyl(prefix + "_rod", 0.0005, h * 0.55, (x + math.cos(a) * r * 0.6, y + math.sin(a) * r * 0.6, zc), "Nickel", rot=(0, 0, 0), verts=6)
+
+def art_plane(name, center, w, h, layout=None, y_off=0.0):
+    """Faceplate area painted by the engine (engraving, labels, scales). Faces -Y."""
+    bpy.ops.mesh.primitive_plane_add(size=1, location=center, rotation=(math.pi / 2, 0, 0))
+    o = bpy.context.active_object; o.name = name; o.scale = (w, h, 1); bpy.ops.object.transform_apply(scale=True)
+    o.data.materials.append(mat(name)); o["keep_uv"] = 1
+    o["w"] = w; o["h"] = h
+    if layout is not None: o["layout"] = json.dumps(layout)
+    return o

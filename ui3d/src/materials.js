@@ -26,8 +26,8 @@ export function makeMaterials(renderer, manager) {
   const brushedN = (t) => tex("brushed_nrm.jpg", false, t, t / 2);
 
   const M = {
-    Tolex: P({ map: tex("tolex_col.jpg", true, 0.12), normalMap: tex("tolex_nrm.jpg", false, 0.12), normalScale: new THREE.Vector2(0.9, 0.9),
-      roughnessMap: tex("tolex_rough.jpg", false, 0.12), roughness: 1, color: 0x9a9a9a, clearcoat: 0.08, clearcoatRoughness: 0.5 }),
+    Tolex: P({ map: tex("tolex_col.jpg", true, 0.07), normalMap: tex("tolex_nrm.jpg", false, 0.07), normalScale: new THREE.Vector2(0.7, 0.7),
+      roughnessMap: tex("tolex_rough.jpg", false, 0.07), roughness: 1, color: 0x707070, clearcoat: 0.08, clearcoatRoughness: 0.5 }),
     Leather: P({ color: 0x24170f, normalMap: tex("tolex_nrm.jpg", false, 0.06), normalScale: new THREE.Vector2(0.6, 0.6), roughnessMap: tex("tolex_rough.jpg", false, 0.06), roughness: 0.9, clearcoat: 0.3, clearcoatRoughness: 0.3 }),
     Walnut: P({ map: tex("walnut_col.jpg", true, 0.8, 0.4), color: 0x8a7468, normalMap: tex("walnut_nrm.jpg", false, 0.8, 0.4), normalScale: new THREE.Vector2(0.35, 0.35),
       roughnessMap: tex("walnut_rough.jpg", false, 0.8, 0.4), roughness: 1, clearcoat: 0.85, clearcoatRoughness: 0.09, clearcoatRoughnessMap: grunge(0.4) }),
@@ -107,6 +107,17 @@ export function makeMaterials(renderer, manager) {
     DrumHead: S({ color: 0xe8e2d4, roughness: 0.7 }),
     Bronze: P({ color: 0xc08a3e, metalness: 1, roughness: 0.32, roughnessMap: brushedR(0.08), envMapIntensity: 1.6 }),
   });
+  Object.assign(M, {
+    KnobBrass: P({ color: 0xc9a663, metalness: 1, roughness: 0.42, roughnessMap: grunge(0.04), envMapIntensity: 1.8 }),
+    KnobCopper: P({ color: 0xa8624a, metalness: 1, roughness: 0.42, roughnessMap: grunge(0.04), envMapIntensity: 1.8 }),
+    KnobDarkBronze: P({ color: 0x4e3a2c, metalness: 1, roughness: 0.48, roughnessMap: grunge(0.04), envMapIntensity: 1.6 }),
+    KnobSteel: P({ color: 0x8e9196, metalness: 1, roughness: 0.4, roughnessMap: grunge(0.04), envMapIntensity: 1.8 }),
+    KnobTopBrushed: P({ color: 0xd8c08a, metalness: 1, roughness: 0.32, roughnessMap: brushedR(0.02), normalMap: brushedN(0.02), normalScale: new THREE.Vector2(0.35, 0.35), envMapIntensity: 1.8 }),
+    LedGreen: S({ color: 0x0a2a06, emissive: 0x46ff2a, emissiveIntensity: 5 }),
+    Mica: S({ color: 0xd8d2c4, roughness: 0.5, transparent: true, opacity: 0.8 }),
+    VentBackDark: S({ color: 0x050507, roughness: 0.9 }),
+  });
+  M.HexMeshDark = M.HexMesh.clone(); M.HexMeshDark.color = new THREE.Color(0x2a2b2f); M.HexMeshDark.roughness = 0.55;
   M.HexMeshPurple = M.HexMesh.clone(); M.HexMeshPurple.color = new THREE.Color(0x7a4ac0);
   M.Emblem = new THREE.MeshStandardMaterial({ map: emblemTexture("#c9a25a", "rgba(0,0,0,0)"), transparent: true, metalness: 1, roughness: 0.45, envMapIntensity: 1.5, polygonOffset: true, polygonOffsetFactor: -2 });
   M.Glass.userData.glass = true;
