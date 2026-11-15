@@ -53,6 +53,17 @@ const std::vector<PedalSpec>& pedalSpecs()
           { { "mix", "Mix", 0.f, 1.f, 0.25f, 0.f, "" }, { "decay", "Decay", 0.2f, 12.f, 2.2f, 2.f, "s" },
             { "size", "Size", 0.f, 1.f, 0.6f, 0.f, "" }, { "predelay", "Pre-Delay", 0.f, 200.f, 20.f, 40.f, "ms" },
             { "damping", "Damping", 0.f, 1.f, 0.4f, 0.f, "" } } },
+        { tz::PedalId::NuclearFuzz, "nfuzz", "Nuclear Fuzz",
+          "Fuzz industriale a due stadi con gate integrato: il gate ascolta la chitarra prima del fuzz e taglia il rumore appena fermi le corde.",
+          { { "drive", "Drive", 0.f, 1.f, 0.7f, 0.f, "" }, { "gate", "Gate", 0.f, 1.f, 0.4f, 0.f, "" },
+            { "volume", "Volume", -24.f, 12.f, -6.f, 0.f, "dB" } } },
+        { tz::PedalId::BioBoost, "bioboost", "Bio-Boost",
+          "Boost pulito fino a +20 dB per spingere i soli. CLEAN spinge un po' i medi, TREBLE toglie i bassi per un boost brillante.",
+          { { "boost", "Boost", 0.f, 1.f, 0.5f, 0.f, "" }, { "mode", "Mode", 0.f, 1.f, 0.f, 0.f, "", { "Clean", "Treble" } } } },
+        { tz::PedalId::MutantMod, "mutant", "Mutant Mod",
+          "Modulazione tre-in-uno: Chorus liquido, Flanger con feedback o Vibrato (solo segnale modulato). Speed = velocità dell'LFO.",
+          { { "mode", "Mode", 0.f, 2.f, 0.f, 0.f, "", { "Chorus", "Flanger", "Vibrato" } },
+            { "speed", "Speed", 0.05f, 10.f, 0.9f, 1.f, "Hz" } } },
     };
     return specs;
 }
@@ -108,6 +119,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         choiceParam (ampId (slot, "mic"), "Cab " + S + " Mic", micNames, 0);
         floatParam (ampId (slot, "mic_pos"), "Cab " + S + " Mic Position", 0.f, 1.f, 0.3f, 0.f, "");
         floatParam (ampId (slot, "mic_dist"), "Cab " + S + " Mic Distance", 0.f, 1.f, 0.2f, 0.f, "");
+        // Model-specific controls (only the models that have them on the panel use them).
+        boolParam (ampId (slot, "tight"), "Amp " + S + " Tight (Overlord)", true);
+        floatParam (ampId (slot, "attack"), "Amp " + S + " Attack (Overlord)", 0.f, 1.f, 0.5f, 0.f, "");
+        for (int b = 0; b < 8; ++b)
+            floatParam (ampId (slot, ("eq" + String (b + 1)).toRawUTF8()), "Amp " + S + " EQ " + overlordEqNames[b] + " (Overlord)", -12.f, 12.f, 0.f, 0.f, "dB");
+        floatParam (ampId (slot, "vapor"), "Amp " + S + " Vapor (Vapor-30)", 0.f, 1.f, 0.4f, 0.f, "");
+        floatParam (ampId (slot, "bloom"), "Amp " + S + " Bloom (Vapor-30)", 0.f, 1.f, 0.5f, 0.f, "");
+        floatParam (ampId (slot, "amb"), "Amp " + S + " D/R Ambience (Vapor-30)", 0.f, 1.f, 0.25f, 0.f, "");
+        floatParam (ampId (slot, "amb_width"), "Amp " + S + " Width (Vapor-30)", 0.f, 1.f, 0.7f, 0.f, "");
+        boolParam (ampId (slot, "standby"), "Amp " + S + " Standby (Vapor-30)", false);
+        boolParam (ampId (slot, "power"), "Amp " + S + " Power (Vapor-30)", true);
     }
 
     const auto& specs = pedalSpecs();

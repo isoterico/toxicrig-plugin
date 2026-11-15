@@ -31,11 +31,14 @@ juce::String ampKnobLabel (int model, int i)
     return std8[i];
 }
 
-const char* const modelNames[3] = { "BRITISH 30", "AMERICAN TWIN", "MODERN 5050" };
-const char* const modelBlurb[3] = {
+const char* const modelNames[5] = { "BRITISH 30", "AMERICAN TWIN", "MODERN 5050", "OVERLORD", "VAPOR-30" };
+const char* const modelBlurb[5] = {
     "Classe A, valvole EL84 senza controreazione: brillante, 'chime', satura ricco. Ispirato al Top Boost britannico.",
     "Pulito cristallino, 6L6 in classe AB con tanta headroom e tone stack scavato. Ispirato ai combo americani anni '60.",
-    "Alto guadagno, quattro stadi a cascata e bassi stretti per riff veloci e palm mute. Ispirato alle testate moderne." };
+    "Alto guadagno, quattro stadi a cascata e bassi stretti per riff veloci e palm mute. Ispirato alle testate moderne.",
+    "Metal moderno per accordature basse: Tight, Attack ed EQ grafico dei medi a 8 bande (regolabili nella vista 3D e in automazione).",
+    "Puliti cristallini con circuito Vapor (satura solo quando plettri forte) e ambiente D/R integrato (vista 3D e automazione)." };
+int imageFor (int model) { return model == 3 ? 2 : (model == 4 ? 1 : model); }
 
 // --- Pedals: size, colours and where each control sits (base units, 150 high).
 struct Ctl { int param; float x, y, size; };
@@ -56,6 +59,9 @@ const PedalLook& look (int pedal)
         { 124, juce::Colour (0xff5a5e66), juce::Colour (0xff2a2d33), juce::Colour (0xffeef2f6), 0, { { 0, 22, 24, 24 }, { 3, 52, 24, 22 }, { 4, 80, 24, 22 }, { 5, 106, 24, 18 },
                                                                                                     { 1, 20, 58, 22 }, { 2, 62, 58, 46 }, { 6, 104, 58, 22 } } },
         { 112, juce::Colour (0xff1b1b22), juce::Colour (0xff08080b), juce::Colour (0xffd9c8ff), 4, { { 0, 22, 24, 24 }, { 1, 56, 24, 24 }, { 2, 90, 24, 24 }, { 3, 36, 57, 20 }, { 4, 78, 57, 20 } } },
+        { 104, juce::Colour (0xff3a2358), juce::Colour (0xff1c0f2e), juce::Colour (0xffd8d0e6), 0, { { 0, 22, 26, 26 }, { 1, 52, 26, 26 }, { 2, 82, 26, 26 } } },
+        { 62,  juce::Colour (0xff9ad12a), juce::Colour (0xff4f7a0c), juce::Colour (0xff10160a), 0, { { 0, 31, 30, 36 }, { 1, 31, 64, 16 } } },
+        { 124, juce::Colour (0xff1a1a1e), juce::Colour (0xff3c1d66), juce::Colour (0xffe8e0ff), 0, { { 0, 34, 28, 34 }, { 1, 34, 62, 22 } } },
     };
     return looks[(size_t) pedal];
 }
@@ -84,7 +90,7 @@ AmpStage::AmpStage (ToxicRigProcessor& p) : proc (p)
 
 int AmpStage::model() const
 {
-    return juce::jlimit (0, 2, (int) proc.apvts.getRawParameterValue (rig::ampId (slot == 0 ? 'a' : 'b', "model"))->load());
+    return juce::jlimit (0, 4, (int) proc.apvts.getRawParameterValue (rig::ampId (slot == 0 ? 'a' : 'b', "model"))->load());
 }
 
 void AmpStage::setSlot (int s)
@@ -141,7 +147,7 @@ void AmpStage::paint (juce::Graphics& g)
         g.fillEllipse (a.getX() - (float) i * 6.0f, a.getBottom() - 18.0f - (float) i, a.getWidth() + (float) i * 12.0f, 26.0f + (float) i * 3.0f);
     }
     g.setOpacity (1.0f); // drawImage uses the current colour's alpha
-    g.drawImage (images[(size_t) m], a, juce::RectanglePlacement::stretchToFit);
+    g.drawImage (images[(size_t) imageFor (m)], a, juce::RectanglePlacement::stretchToFit);
     const auto& L = ampLayout (m);
     // Engraved labels under every knob (same count as the knobs: nothing fake).
     g.setFont (skinFont (SkinId::ToxicLab, FontRole::Label, std::max (9.5f, 19.0f * s)));
@@ -166,7 +172,7 @@ void AmpStage::paint (juce::Graphics& g)
     else
     {
         // Logo badge on the grille.
-        const auto badge = (m == 2 ? juce::Rectangle<float> (521, 186, 230, 54) : juce::Rectangle<float> (120, 200, 230, 54)) * s + a.getTopLeft();
+        const auto badge = (imageFor (m) == 2 ? juce::Rectangle<float> (521, 186, 230, 54) : juce::Rectangle<float> (120, 200, 230, 54)) * s + a.getTopLeft();
         g.setColour (juce::Colours::black.withAlpha (0.55f));
         g.fillRoundedRectangle (badge, 6.0f * s);
         g.setColour (juce::Colour (0xffb8b8c4).withAlpha (0.6f));
@@ -209,8 +215,8 @@ AmpSide::AmpSide (ToxicRigProcessor& p, AmpStage& st)
         channels[(size_t) i].onClick = [this, i] { if (channelAtt) channelAtt->setValueAsCompleteGesture ((float) i); };
         addAndMakeVisible (channels[(size_t) i]);
     }
-    prev.onClick = [this] { if (modelAtt) modelAtt->setValueAsCompleteGesture ((float) ((modelIdx + 2) % 3)); };
-    next.onClick = [this] { if (modelAtt) modelAtt->setValueAsCompleteGesture ((float) ((modelIdx + 1) % 3)); };
+    prev.onClick = [this] { if (modelAtt) modelAtt->setValueAsCompleteGesture ((float) ((modelIdx + 4) % 5)); };
+    next.onClick = [this] { if (modelAtt) modelAtt->setValueAsCompleteGesture ((float) ((modelIdx + 1) % 5)); };
     cabBtn.onClick = [this] { if (onOpenCab) onOpenCab(); };
     addAndMakeVisible (bOn);
     levelA = std::make_unique<CaptionKnob> (p.apvts, rig::ampId ('a', "level"), "Livello A");

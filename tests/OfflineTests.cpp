@@ -218,6 +218,77 @@ int main (int argc, char** argv)
         }
     }
 
+    // ------------------------------------------------------------------ 1b. new gear
+    log ("\n[1b] New amps (Overlord, Vapor-30) and pedals (Nuclear Fuzz, Bio-Boost, Mutant Mod), 48 kHz");
+    {
+        const double fs = 48000.0;
+        const auto di = test::renderDI (fs, riffLen, riff);
+        struct Case { const char* name; std::function<void (ToxicRigProcessor&)> set; };
+        std::vector<Case> cases = {
+            { "Overlord_tight", [] (ToxicRigProcessor& p) { setParam (p, "a_model", 3.0f); setParam (p, "a_gain", 0.75f); setParam (p, "a_tight", 1.0f);
+                                                           setParam (p, "a_eq3", -6.0f); setParam (p, "a_eq6", 4.0f); setParam (p, "nfuzz_on", 0.0f); } },
+            { "Overlord_loose_attack", [] (ToxicRigProcessor& p) { setParam (p, "a_model", 3.0f); setParam (p, "a_gain", 0.9f); setParam (p, "a_tight", 0.0f); setParam (p, "a_attack", 1.0f); } },
+            { "Vapor_clean_DR", [] (ToxicRigProcessor& p) { setParam (p, "a_model", 4.0f); setParam (p, "a_gain", 0.5f); setParam (p, "a_vapor", 0.8f); setParam (p, "a_amb", 0.6f); } },
+            { "Vapor_standby", [] (ToxicRigProcessor& p) { setParam (p, "a_model", 4.0f); setParam (p, "a_standby", 1.0f); } },
+            { "NuclearFuzz", [] (ToxicRigProcessor& p) { setParam (p, "a_model", 0.0f); setParam (p, "nfuzz_on", 1.0f); setParam (p, "nfuzz_gate", 0.6f); } },
+            { "BioBoost_treble", [] (ToxicRigProcessor& p) { setParam (p, "a_model", 0.0f); setParam (p, "bioboost_on", 1.0f); setParam (p, "bioboost_boost", 0.8f); setParam (p, "bioboost_mode", 1.0f); } },
+            { "MutantMod_flanger", [] (ToxicRigProcessor& p) { setParam (p, "a_model", 1.0f); setParam (p, "mutant_on", 1.0f); setParam (p, "mutant_mode", 1.0f); } },
+            { "MutantMod_vibrato", [] (ToxicRigProcessor& p) { setParam (p, "a_model", 1.0f); setParam (p, "mutant_on", 1.0f); setParam (p, "mutant_mode", 2.0f); setParam (p, "mutant_speed", 5.0f); } },
+        };
+        for (auto& c : cases)
+        {
+            ToxicRigProcessor p;
+            p.applyFactoryPreset (0);
+            allPedalsOff (p);
+            c.set (p);
+            prepare (p, fs, 256);
+            auto r = run (p, di, 256);
+            const auto st = stats (r.audio);
+            log ("  " + juce::String (c.name).paddedRight (' ', 22) + " peak " + db (st.peak) + "  rms " + db (st.rms) + "  RT x" + juce::String (riffLen / r.seconds, 1));
+            check (st.finite, juce::String (c.name) + ": non-finite samples");
+            check (st.peak < 1.5f, juce::String (c.name) + ": output too hot");
+            if (juce::String (c.name) == "Vapor_standby") check (st.rms < 0.0005, "standby must be silent");
+            else check (st.rms > 0.003, juce::String (c.name) + ": output (almost) silent");
+            writeWav (juce::String ("1b_") + c.name + ".wav", r.audio, fs);
+        }
+        // Routing: v2 round trip for many random orders, and old v0.2 sessions still load.
+        juce::Random rnd (7);
+        bool ok = true;
+        for (int t = 0; t < 500; ++t)
+        {
+            rig::Routing r;
+            std::array<int, tz::kNumPedals> perm; for (int i = 0; i < tz::kNumPedals; ++i) perm[(size_t) i] = i;
+            for (int i = tz::kNumPedals - 1; i > 0; --i) std::swap (perm[(size_t) i], perm[(size_t) rnd.nextInt (i + 1)]);
+            const int split = rnd.nextInt (tz::kNumPedals + 1);
+            for (int i = 0; i < tz::kNumPedals; ++i) (i < split ? r.board[(size_t) r.numBoard++] : r.loop[(size_t) r.numLoop++]) = perm[(size_t) i];
+            const auto d = rig::Routing::decode (r.encode());
+            ok &= d.numBoard == r.numBoard && d.numLoop == r.numLoop && d.board == r.board && d.loop == r.loop;
+        }
+        uint64_t old = 0; // v0.2 default: 5 board, 6 loop
+        for (int i = 0; i < 5; ++i) old |= (uint64_t) i << (5 * i);
+        for (int i = 0; i < 6; ++i) old |= (uint64_t) (16 | i) << (5 * (5 + i));
+        const auto o = rig::Routing::decode (old);
+        ok &= o.numBoard == 7 && o.numLoop == 7 && o.board[0] == 0 && o.loop[0] == (int) tz::PedalId::EQ;
+        log (juce::String ("  routing v2 round-trip + v0.2 import: ") + (ok ? "OK" : "FAILED"));
+        // Aliasing of the new high-gain paths (4x, before the cab = worst case).
+        for (int which = 0; which < 2; ++which)
+        {
+            ToxicRigProcessor p;
+            p.applyFactoryPreset (0); allPedalsOff (p);
+            setParam (p, "a_model", 3.0f); setParam (p, "a_gain", 1.0f); setParam (p, "a_cab_on", 0.0f);
+            if (which == 1) { setParam (p, "nfuzz_on", 1.0f); setParam (p, "nfuzz_drive", 1.0f); setParam (p, "nfuzz_gate", 0.0f); }
+            setParam (p, rig::ids::oversampling, 1.0f);
+            prepare (p, fs, 512);
+            std::vector<float> sine ((size_t) (fs * 1.5));
+            for (size_t i = 0; i < sine.size(); ++i) sine[i] = (float) (0.5 * std::sin (2 * juce::MathConstants<double>::pi * 2637.0 * (double) i / fs));
+            auto r = run (p, sine, 512);
+            const double al = aliasingDb (r.audio.getReadPointer (0), r.audio.getNumSamples(), fs, 2637.0);
+            log ("  aliasing 4x raw, " + juce::String (which ? "Overlord + Nuclear Fuzz" : "Overlord gain 100%") + ": " + juce::String (al, 1) + " dB");
+            check (al < -40.0, "new gear aliasing too high");
+        }
+        check (ok, "routing encode/decode");
+    }
+
     if (onlyRenders) return 0;
     // ------------------------------------------------------------------ 2. block sizes
     log ("\n[2] Buffer sizes 32..1024 (Metal + amp B + every pedal on, 4x)");
@@ -317,7 +388,15 @@ int main (int argc, char** argv)
         const double r3 = measure ("Pedals on/off (chorus, comp, delay)", [] (int b, ToxicRigProcessor& p)
         { if (b > 300 && b % 400 == 0) { const float v = (b / 400) % 2 ? 0.0f : 1.0f; setParam (p, "chorus_on", v); setParam (p, "comp_on", v); setParam (p, "delay_on", v); return true; } return false; });
         const double r4 = measure ("Amp model / channel switch", [] (int b, ToxicRigProcessor& p)
-        { if (b > 300 && b % 400 == 200) { setParam (p, "a_model", (float) ((b / 400) % 3)); setParam (p, "a_channel", (float) ((b / 400 + 1) % 3)); return true; } return false; });
+        { if (b > 300 && b % 400 == 200) { setParam (p, "a_model", (float) ((b / 400) % 5)); setParam (p, "a_channel", (float) ((b / 400 + 1) % 3)); return true; } return false; });
+        const double r7 = measure ("Overlord: tight switch + EQ + attack", [] (int b, ToxicRigProcessor& p)
+        { if (b == 10) setParam (p, "a_model", 3.0f);
+          if (b > 300 && b % 400 == 0) { const bool on = (b / 400) % 2; setParam (p, "a_tight", on ? 1.0f : 0.0f); setParam (p, "a_eq4", on ? 12.0f : -12.0f); setParam (p, "a_attack", on ? 1.0f : 0.0f); return true; } return false; });
+        const double r8 = measure ("Vapor: vapor/D-R knobs + standby", [] (int b, ToxicRigProcessor& p)
+        { if (b == 10) setParam (p, "a_model", 4.0f);
+          if (b > 300 && b % 400 == 0) { const bool on = (b / 400) % 2; setParam (p, "a_vapor", on ? 1.0f : 0.0f); setParam (p, "a_amb", on ? 1.0f : 0.0f); setParam (p, "a_standby", (b / 400) % 4 == 3 ? 1.0f : 0.0f); return true; } return false; });
+        const double r9 = measure ("New pedals on/off + Mutant mode", [] (int b, ToxicRigProcessor& p)
+        { if (b > 300 && b % 400 == 0) { const float v = (b / 400) % 2 ? 0.0f : 1.0f; setParam (p, "bioboost_on", v); setParam (p, "mutant_on", v); setParam (p, "mutant_mode", (float) ((b / 400) % 3)); return true; } return false; });
         const double r5 = measure ("Reorder pedals + oversampling change", [] (int b, ToxicRigProcessor& p)
         {
             if (b > 300 && b % 400 == 200)
@@ -338,6 +417,7 @@ int main (int argc, char** argv)
         { if (b > 300 && b % 400 == 0) { p.applyFactoryPreset ((b / 400) % (int) rig::factoryPresets().size()); return true; } return false; });
         check (r1 < 1.5 && r2 < 1.5 && r3 < 1.5, "zipper noise on knob / pedal changes");
         check (r4 < 1.5, "click on amp model / channel switch");
+        check (r7 < 1.5 && r8 < 1.5 && r9 < 1.5, "click on Overlord / Vapor / new pedal controls");
         // Reorder / oversampling / preset changes use a 12 ms fade; what remains is
         // below ~-60 dBFS, but this metric is extremely sensitive, so the bar is 5x.
         check (r5 < 5.0 && r5a < 5.0 && r5b < 5.0 && r6 < 5.0, "click on reorder / oversampling / preset change");
@@ -382,7 +462,7 @@ int main (int argc, char** argv)
         setParam (p, rig::ids::oversampling, (float) os);
         prepare (p, fs, 128);
         auto r = run (p, di, 128);
-        log ("  48 kHz, 2 amps + 11 pedals + 2 cabs, " + rig::osNames[os] + ":  x" + juce::String (8.0 / r.seconds, 1) + " real time ("
+        log ("  48 kHz, 2 amps + 14 pedals + 2 cabs, " + rig::osNames[os] + ":  x" + juce::String (8.0 / r.seconds, 1) + " real time ("
              + juce::String (100.0 * r.seconds / 8.0, 1) + "% of one core)");
     }
 

@@ -47,9 +47,10 @@ namespace ids
                               ampBOn = "amp_b_on", abMix = "ab_mix", width = "width";
 }
 
-inline const juce::StringArray ampModels { "British", "American", "Modern" };
+inline const juce::StringArray ampModels { "British", "American", "Modern", "Overlord", "Vapor" };
 inline const juce::StringArray ampChannels { "Clean", "Crunch", "Lead" };
 inline const juce::StringArray cabNames { "British 2x12", "American 1x12", "Modern 4x12", "IR utente" };
 inline const juce::StringArray micNames { "Dinamico", "Nastro", "Condensatore" };
 inline const juce::StringArray osNames { "2x", "4x", "8x" };
+inline const char* const overlordEqNames[8] = { "150", "250", "400", "630", "1k", "1.6k", "2.5k", "4k" };
 } // namespace rig

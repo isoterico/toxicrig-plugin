@@ -11,6 +11,7 @@ struct RigEngine::Values
     {
         tz::AmpVoicing model {}; tz::AmpChannel channel {}; tz::AmpKnobs knobs; float levelDb = 0;
         bool cabOn = true; int cab = 0; tz::MicType mic {}; float micPos = 0.3f, micDist = 0.2f;
+        float amb = 0, ambWidth = 0.7f; bool powered = true;
     };
     std::array<Slot, 2> slot;
     std::array<bool, tz::kNumPedals> on {};
@@ -40,6 +41,11 @@ RigEngine::RigEngine (juce::AudioProcessorValueTreeState& state) : apvts (state)
         sp.bright = get (ampId (c, "bright")); sp.level = get (ampId (c, "level"));
         sp.cabOn = get (ampId (c, "cab_on")); sp.cab = get (ampId (c, "cab")); sp.mic = get (ampId (c, "mic"));
         sp.micPos = get (ampId (c, "mic_pos")); sp.micDist = get (ampId (c, "mic_dist"));
+        sp.tight = get (ampId (c, "tight")); sp.attack = get (ampId (c, "attack"));
+        for (int b = 0; b < 8; ++b) sp.eq[(size_t) b] = get (ampId (c, ("eq" + juce::String (b + 1)).toRawUTF8()));
+        sp.vapor = get (ampId (c, "vapor")); sp.bloom = get (ampId (c, "bloom"));
+        sp.amb = get (ampId (c, "amb")); sp.ambWidth = get (ampId (c, "amb_width"));
+        sp.standby = get (ampId (c, "standby")); sp.power = get (ampId (c, "power"));
     }
     const auto& specs = pedalSpecs();
     for (int p = 0; p < tz::kNumPedals; ++p)
@@ -59,6 +65,14 @@ RigEngine::RigEngine (juce::AudioProcessorValueTreeState& state) : apvts (state)
     pedals[(size_t) tz::PedalId::Tremolo] = std::make_unique<tz::TremoloPedal>();
     pedals[(size_t) tz::PedalId::Delay] = std::make_unique<tz::DelayPedal>();
     pedals[(size_t) tz::PedalId::Reverb] = std::make_unique<tz::ReverbPedal>();
+    pedals[(size_t) tz::PedalId::NuclearFuzz] = std::make_unique<tz::NuclearFuzzPedal>();
+    pedals[(size_t) tz::PedalId::BioBoost] = std::make_unique<tz::BioBoostPedal>();
+    pedals[(size_t) tz::PedalId::MutantMod] = std::make_unique<tz::MutantModPedal>();
+}
+
+float RigEngine::mutantPhase() const
+{
+    return static_cast<tz::MutantModPedal*> (pedals[(size_t) tz::PedalId::MutantMod].get())->lfoPhase.load (std::memory_order_relaxed);
 }
 
 void RigEngine::readParams (Values& v) const
@@ -70,7 +84,7 @@ void RigEngine::readParams (Values& v) const
     {
         const auto& sp = slotParams[(size_t) s];
         auto& o = v.slot[(size_t) s];
-        o.model = (tz::AmpVoicing) juce::jlimit (0, 2, (int) sp.model->load());
+        o.model = (tz::AmpVoicing) juce::jlimit (0, 4, (int) sp.model->load());
         o.channel = (tz::AmpChannel) juce::jlimit (0, 2, (int) sp.channel->load());
         o.knobs.gain = sp.gain->load(); o.knobs.bass = sp.bass->load(); o.knobs.mid = sp.mid->load();
         o.knobs.treble = sp.treble->load(); o.knobs.presence = sp.presence->load(); o.knobs.resonance = sp.resonance->load();
@@ -79,6 +93,13 @@ void RigEngine::readParams (Values& v) const
         o.cabOn = sp.cabOn->load() > 0.5f; o.cab = (int) sp.cab->load();
         o.mic = (tz::MicType) juce::jlimit (0, 2, (int) sp.mic->load());
         o.micPos = sp.micPos->load(); o.micDist = sp.micDist->load();
+        o.knobs.tight = sp.tight->load() > 0.5f; o.knobs.attack = sp.attack->load();
+        for (size_t b = 0; b < 8; ++b) o.knobs.eq[b] = sp.eq[b]->load();
+        o.knobs.vapor = sp.vapor->load(); o.knobs.bloom = sp.bloom->load();
+        // POWER and STANDBY only exist on the Vapor-30 panel.
+        const bool vapor = o.model == tz::AmpVoicing::Vapor;
+        o.amb = vapor ? sp.amb->load() : 0.0f; o.ambWidth = sp.ambWidth->load();
+        o.powered = ! vapor || (sp.power->load() > 0.5f && sp.standby->load() < 0.5f);
     }
     for (int p = 0; p < tz::kNumPedals; ++p)
     {
@@ -120,6 +141,15 @@ void RigEngine::prepare (double sampleRate, int maxBlockSize)
         cabs[(size_t) s].prepare ({ sampleRate, (juce::uint32) maxBlock, 1 });
         mics[(size_t) s].prepare (sampleRate);
         ampLevel[(size_t) s].prepare (sampleRate, 0.03);
+        ampPower[(size_t) s].prepare (sampleRate, 0.08);
+        {
+            const auto& sp = slotParams[(size_t) s];
+            const bool vapor = (int) sp.model->load() == (int) tz::AmpVoicing::Vapor;
+            ampPower[(size_t) s].setImmediate (! vapor || (sp.power->load() > 0.5f && sp.standby->load() < 0.5f) ? 1.0 : 0.0);
+        }
+        ambAmount[(size_t) s].prepare (sampleRate, 0.05);
+        ambience[(size_t) s].prepare (sampleRate, maxBlock);
+        ambience[(size_t) s].setRate (sampleRate);
         activeCabOn[(size_t) s] = slotParams[(size_t) s].cabOn->load() > 0.5f;
     }
     applyRateToBoard (sampleRate * osFactor (activeOs));
@@ -135,7 +165,7 @@ void RigEngine::prepare (double sampleRate, int maxBlockSize)
 
     topoStep = 1.0 / (0.012 * sampleRate);
     topoGain = 1.0; topoState = 0;
-    activeTopology = routingCode.load() ^ ((uint64_t) activeOs << 60) ^ ((uint64_t) activeCabOn[0] << 62) ^ ((uint64_t) activeCabOn[1] << 63);
+    activeTopology = { routingCode.load(), activeOs, activeCabOn[0], activeCabOn[1] };
 
     tunerDecim = std::max (1, (int) std::lround (sampleRate / 16000.0));
     dcIn.setHighpass (sampleRate, 8.0, 0.7);
@@ -164,6 +194,7 @@ void RigEngine::reset()
     for (auto& a : amps) a.reset();
     for (auto& c : cabs) c.reset();
     for (auto& m : mics) m.reset();
+    for (auto& a : ambience) a.reset();
     for (auto& p : pedals) p->reset();
     latencyPadL.reset(); latencyPadR.reset();
     dcIn.reset();
@@ -208,7 +239,7 @@ void RigEngine::process (juce::AudioBuffer<float>& buffer, int numInputChannels,
         float* outR = outCh > 1 ? buffer.getWritePointer (1, start) : nullptr;
 
         // ---- topology (routing / oversampling / cab on-off) --------------------
-        const uint64_t wanted = routingCode.load() ^ ((uint64_t) v.os << 60) ^ ((uint64_t) v.slot[0].cabOn << 62) ^ ((uint64_t) v.slot[1].cabOn << 63);
+        const Topology wanted { routingCode.load(), v.os, v.slot[0].cabOn, v.slot[1].cabOn };
         if (wanted != activeTopology && topoState == 0) topoState = 1;
         if (topoState == 1 && topoGain <= 0.0)
         {
@@ -281,7 +312,8 @@ void RigEngine::process (juce::AudioBuffer<float>& buffer, int numInputChannels,
                 mics[(size_t) s].process (d, n);
             }
             ampLevel[(size_t) s].setTarget (tz::dbToGain (v.slot[(size_t) s].levelDb));
-            for (int i = 0; i < n; ++i) d[i] *= (float) ampLevel[(size_t) s].next();
+            ampPower[(size_t) s].setTarget (v.slot[(size_t) s].powered ? 1.0 : 0.0);
+            for (int i = 0; i < n; ++i) d[i] *= (float) (ampLevel[(size_t) s].next() * ampPower[(size_t) s].next());
         }
 
         // ---- A/B mix to stereo ----------------------------------------------------
@@ -300,6 +332,19 @@ void RigEngine::process (juce::AudioBuffer<float>& buffer, int numInputChannels,
             const double sa = a[i] * gA, sb = bActive ? b[i] * gB : 0.0;
             L[i] = (float) (sa * std::cos (panA) * 1.41421356 + sb * std::cos (panB) * 1.41421356);
             R[i] = (float) (sa * std::sin (panA) * 1.41421356 + sb * std::sin (panB) * 1.41421356);
+        }
+        // Vapor-30 ambience (D/R): wet stereo return added on top of the dry amp.
+        // It keeps running for a few seconds after you turn it down, so the tail
+        // dies naturally instead of being cut.
+        for (int s = 0; s < (bActive ? 2 : 1); ++s)
+        {
+            const double target = v.slot[(size_t) s].amb;
+            ambAmount[(size_t) s].setTarget (target);
+            if (target > 0.0 || ambAmount[(size_t) s].isSmoothing()) ambTail[(size_t) s] = (int) (6.0 * baseRate);
+            if (ambTail[(size_t) s] <= 0) continue;
+            ambTail[(size_t) s] -= n;
+            const double amt = ambAmount[(size_t) s].skip (n) * (s == 1 ? ampBMix.current() : 1.0);
+            ambience[(size_t) s].process (monoScratch.getReadPointer (s), L, R, n, 0.75 * amt, v.slot[(size_t) s].ambWidth);
         }
         if (! bActive) ampBMix.setImmediate (v.ampBOn ? 1.0 : 0.0);
 

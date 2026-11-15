@@ -4,11 +4,13 @@
 // prepare() allocates for the highest rate, setRate() only recomputes coefficients.
 #pragma once
 #include "DelayLine.h"
+#include <atomic>
 #include "Filters.h"
 
 namespace tz
 {
-enum class PedalId : int { Gate = 0, Comp, Boost, Overdrive, Fuzz, EQ, Chorus, Phaser, Tremolo, Delay, Reverb, Count };
+enum class PedalId : int { Gate = 0, Comp, Boost, Overdrive, Fuzz, EQ, Chorus, Phaser, Tremolo, Delay, Reverb,
+                           NuclearFuzz, BioBoost, MutantMod, Count };
 constexpr int kNumPedals = (int) PedalId::Count;
 
 // log(cosh(x)) without overflow: the antiderivative of tanh, used for ADAA.
@@ -596,5 +598,195 @@ private:
     Smoother sMix, sSize;
     double lfo = 0;
     float lastDamp = -1;
+};
+// ---------------------------------------------------------------------------
+// Nuclear Fuzz: two hard-clipping transistor stages in series (square-wave fuzz,
+// with ADAA on both), a mid-scooped tone network, then a fast gate that sits right
+// after the clipping. A fuzz gate must work on the *input* level, not the output:
+// the output is always loud (it's a square wave), so the gate listens to the guitar
+// before the gain and closes the moment the strings are muted.
+class NuclearFuzzPedal : public Pedal
+{
+public:
+    // p0 drive 0..1, p1 gate 0..1, p2 volume dB
+    void prepare (double, int) override {}
+    void setRate (double r) override
+    {
+        fs = r;
+        for (auto& s : st) { s.in.setCutoff (fs, 90.0); s.mid.setPeak (fs, 700.0, 0.7, -9.0); s.lo.setLowShelf (fs, 160.0, 0.7, 4.0); s.dc.prepare (fs, 12.0); s.bw.setCutoff (fs, 6500.0); }
+        sDrive.prepare (fs, 0.03); sVol.prepare (fs, 0.03);
+        envRel = std::exp (-1.0 / (0.02 * fs));
+        atk = 1.0 - std::exp (-1.0 / (0.0003 * fs)); rel = 1.0 - std::exp (-1.0 / (0.012 * fs));
+    }
+    void reset() override { for (auto& s : st) { s.in.reset(); s.mid.reset(); s.lo.reset(); s.dc.reset(); s.bw.reset(); s.a1 = {}; s.a2 = {}; } env = 0; g = 1; }
+    void process (float* const* ch, int numCh, int n) override
+    {
+        sDrive.setTarget (p[0]); sVol.setTarget (dbToGain (p[2]));
+        // Gate knob 0 = off, 1 = threshold at -30 dBFS-ish on the input (very tight).
+        const double gk = clamp ((double) p[1], 0.0, 1.0);
+        const double thr = gk <= 0.001 ? 0.0 : dbToGain (-75.0 + 45.0 * gk);
+        for (int i = 0; i < n; ++i)
+        {
+            const double d = sDrive.next();
+            const double g1 = 6.0 + 60.0 * d * d, g2 = 3.0 + 12.0 * d;
+            const double vol = sVol.next();
+            double a = 0;
+            for (int c = 0; c < numCh; ++c) a = std::max (a, (double) std::abs (ch[c][i]));
+            env = std::max (a, env * envRel);
+            const double target = env >= thr ? 1.0 : 0.0;
+            g += (target - g) * (target > g ? atk : rel);
+            for (int c = 0; c < numCh; ++c)
+            {
+                auto& s = st[(size_t) c];
+                double u = s.in.hp (ch[c][i]) * g1;
+                u = s.a1.process (u, [] (double v) { return clamp (v, -1.0, 0.8); },
+                                     [] (double v) { return v > 0.8 ? 0.8 * v - 0.32 : (v < -1.0 ? -v - 0.5 : 0.5 * v * v); });
+                u = s.dc.process (u) * g2;
+                u = s.a2.process (u, [] (double v) { return std::tanh (v); }, [] (double v) { return logCosh (v); });
+                u = s.lo.process (s.mid.process (u));
+                ch[c][i] = (float) (s.bw.lp (u) * 1.2 * vol * g);
+            }
+        }
+        env = flushDenormal (env);
+    }
+private:
+    struct St { OnePole in, bw; Biquad mid, lo; DCBlocker dc; Adaa1 a1, a2; };
+    std::array<St, 2> st;
+    Smoother sDrive, sVol;
+    double env = 0, envRel = 0.999, atk = 0.1, rel = 0.01, g = 1;
+};
+
+// ---------------------------------------------------------------------------
+// Bio-Boost: one-knob clean boost. CLEAN mode is a transparent op-amp boost with a
+// gentle mid push (a 900 Hz bump) so solos cut through; TREBLE mode removes the low
+// end first (Rangemaster-style input cap) for a brighter push into the amp.
+// Clean headroom is large: it only rounds off very big peaks (soft knee).
+class BioBoostPedal : public Pedal
+{
+public:
+    // p0 boost 0..1, p1 mode (0 clean, 1 treble)
+    void prepare (double, int) override {}
+    void setRate (double r) override
+    {
+        fs = r; sBoost.prepare (fs, 0.03); sMode.prepare (fs, 0.03);
+        for (auto& s : st) { s.mid.setPeak (fs, 900.0, 0.8, 4.0); s.hp.setCutoff (fs, 1200.0); s.dc.prepare (fs, 10.0); }
+    }
+    void reset() override { for (auto& s : st) { s.mid.reset(); s.hp.reset(); s.dc.reset(); s.adaa = {}; } }
+    void process (float* const* ch, int numCh, int n) override
+    {
+        sBoost.setTarget (p[0]); sMode.setTarget (p[1] > 0.5f ? 1.0 : 0.0);
+        for (int i = 0; i < n; ++i)
+        {
+            const double b = sBoost.next(), m = sMode.next();
+            const double gain = dbToGain (20.0 * b);   // 0 .. +20 dB
+            for (int c = 0; c < numCh; ++c)
+            {
+                auto& s = st[(size_t) c];
+                const double x = ch[c][i];
+                const double clean = s.mid.process (x);
+                const double treble = s.hp.hp (x) * 2.2 + 0.12 * x;
+                double u = ((1.0 - m) * clean + m * treble) * gain;
+                // Rail limit of a 9 V boost referred to the 1.5 V guitar scale: ~3 V.
+                u = s.adaa.process (u / 3.0, [] (double v) { return std::tanh (v); }, [] (double v) { return logCosh (v); }) * 3.0;
+                ch[c][i] = (float) s.dc.process (u);
+            }
+        }
+    }
+private:
+    struct St { Biquad mid; OnePole hp; DCBlocker dc; Adaa1 adaa; };
+    std::array<St, 2> st;
+    Smoother sBoost, sMode;
+};
+
+// ---------------------------------------------------------------------------
+// Mutant Mod: one modulated delay, three characters.
+//   Chorus  = 2 voices, ~9 ms, slow wide sweep, mixed with the dry signal.
+//   Flanger = 1 voice, 0.3..4 ms sweep with feedback (the jet-plane comb).
+//   Vibrato = wet only, ~5 ms with a fast-ish sine: pitch wobble, no dry signal.
+// Switching mode crossfades the outputs of two settings (no click). The LFO phase
+// is exposed so the UI can pulse the window tube in time with it.
+class MutantModPedal : public Pedal
+{
+public:
+    // p0 mode (0 chorus, 1 flanger, 2 vibrato), p1 speed Hz
+    void prepare (double maxRate, int) override { for (auto& d : dl) d.prepare ((int) (0.04 * maxRate)); }
+    void setRate (double r) override { fs = r; for (auto& m : mix) m.prepare (fs, 0.05); }
+    void reset() override { for (auto& d : dl) d.reset(); phase = 0; fb = { 0, 0 }; }
+    void process (float* const* ch, int numCh, int n) override
+    {
+        const int mode = clamp ((int) std::lround (p[0]), 0, 2);
+        for (int k = 0; k < 3; ++k) mix[(size_t) k].setTarget (k == mode ? 1.0 : 0.0);
+        const double inc = clamp ((double) p[1], 0.05, 12.0) / fs;
+        for (int i = 0; i < n; ++i)
+        {
+            phase += inc; if (phase >= 1.0) phase -= 1.0;
+            const double wc = mix[0].next(), wf = mix[1].next(), wv = mix[2].next();
+            for (int c = 0; c < numCh; ++c)
+            {
+                const double x = ch[c][i];
+                const double off = c == 0 ? 0.0 : 0.25;
+                const double lfo = std::sin (kTwoPi * (phase + off));
+                // Flanger feedback goes into the line with the input.
+                dl[(size_t) c].push ((float) (x + wf * 0.65 * fb[(size_t) c]));
+                const double chorus = 0.5 * (dl[(size_t) c].read ((0.009 + 0.003 * lfo) * fs) + dl[(size_t) c].read ((0.012 - 0.0025 * lfo) * fs));
+                const double fl = dl[(size_t) c].read ((0.00215 + 0.00185 * lfo) * fs);
+                fb[(size_t) c] = flushDenormal (std::tanh (fl));
+                const double vib = dl[(size_t) c].read ((0.005 + 0.0022 * lfo) * fs);
+                double y = wc * (0.75 * x + 0.65 * chorus) + wf * (0.6 * x + 0.6 * fl) + wv * vib;
+                ch[c][i] = (float) y;
+            }
+        }
+        lfoPhase.store ((float) phase, std::memory_order_relaxed);
+    }
+    std::atomic<float> lfoPhase { 0 };
+private:
+    std::array<DelayLine, 2> dl;
+    std::array<Smoother, 3> mix;
+    std::array<double, 2> fb { 0, 0 };
+    double phase = 0;
+};
+
+// ---------------------------------------------------------------------------
+// Vapor-30 built-in ambience (the D/R knob): a dark dotted-eighth delay feeding a
+// large hall, returned in stereo. Wet only; the caller adds it to the dry amp.
+// Width sets how much of the side (L-R) signal is kept.
+class Ambience
+{
+public:
+    void prepare (double maxRate, int maxBlock)
+    {
+        delay.prepare (maxRate, maxBlock); verb.prepare (maxRate, maxBlock);
+        bufL.assign ((size_t) maxBlock, 0.0f); bufR.assign ((size_t) maxBlock, 0.0f);
+    }
+    void setRate (double fs)
+    {
+        delay.setRate (fs); verb.setRate (fs);
+        delay.setParam (0, 375.0f); delay.setParam (1, 0.0f); delay.setParam (3, 0.38f); delay.setParam (4, 0.55f); delay.setParam (5, 0.35f); delay.setParam (6, 1.0f);
+        verb.setParam (0, 1.0f); verb.setParam (1, 4.2f); verb.setParam (2, 0.85f); verb.setParam (3, 30.0f); verb.setParam (4, 0.45f);
+        sWidth.prepare (fs, 0.05);
+    }
+    void reset() { delay.reset(); verb.reset(); }
+    // in: mono slot signal. Adds amount * wet into L/R.
+    void process (const float* in, float* L, float* R, int n, double amount, double widthTarget)
+    {
+        for (int i = 0; i < n; ++i) { bufL[(size_t) i] = in[i]; bufR[(size_t) i] = in[i]; }
+        float* st[2] = { bufL.data(), bufR.data() };
+        delay.process (st, 2, n);
+        verb.process (st, 2, n);
+        sWidth.setTarget (widthTarget);
+        for (int i = 0; i < n; ++i)
+        {
+            // Reverb at mix 1 leaves 0.65 x its input in the output: remove the dry part.
+            const double wl = bufL[(size_t) i] - 0.65 * in[i], wr = bufR[(size_t) i] - 0.65 * in[i];
+            const double m = 0.5 * (wl + wr), sd = 0.5 * (wl - wr) * (0.2 + 1.6 * sWidth.next());
+            L[i] += (float) (amount * (m + sd));
+            R[i] += (float) (amount * (m - sd));
+        }
+    }
+private:
+    DelayPedal delay;
+    ReverbPedal verb;
+    std::vector<float> bufL, bufR;
+    Smoother sWidth;
 };
 } // namespace tz

@@ -38,6 +38,9 @@ public:
     std::vector<float> tunerBuffer = std::vector<float> (1 << 15);
     double tunerRate() const { return baseRate / tunerDecim; }
 
+    // LFO phase of the Mutant Mod (the UI pulses its tube with it).
+    float mutantPhase() const;
+
     // Last output samples for the oscilloscope (UI reads, may tear: display only).
     void copyScope (float* dst, int n) const
     {
@@ -58,7 +61,9 @@ private:
     // Cached parameter pointers (atomic reads on the audio thread).
     std::atomic<float>* pInGain {}, * pOutVol {}, * pOs {}, * pAmpBOn {}, * pAbMix {}, * pWidth {};
     struct SlotParams { std::atomic<float>* model, * channel, * gain, * bass, * mid, * treble, * presence, * resonance,
-                                             * master, * sag, * bright, * level, * cabOn, * cab, * mic, * micPos, * micDist; };
+                                             * master, * sag, * bright, * level, * cabOn, * cab, * mic, * micPos, * micDist,
+                                             * tight, * attack, * vapor, * bloom, * amb, * ambWidth, * standby, * power;
+                         std::array<std::atomic<float>*, 8> eq; };
     std::array<SlotParams, 2> slotParams {};
     std::array<std::atomic<float>*, tz::kNumPedals> pedalOn {};
     std::array<std::array<std::atomic<float>*, tz::Pedal::kMaxParams>, tz::kNumPedals> pedalParams {};
@@ -71,7 +76,9 @@ private:
     std::array<tz::AmpSlot, 2> amps;
     std::array<juce::dsp::Convolution, 2> cabs;
     std::array<tz::MicFilter, 2> mics;
-    std::array<tz::Smoother, 2> ampLevel;
+    std::array<tz::Smoother, 2> ampLevel, ampPower, ambAmount;
+    std::array<tz::Ambience, 2> ambience;
+    std::array<int, 2> ambTail { 0, 0 };
     tz::Smoother inGain, outGain, abMix, width, ampBMix;
     tz::DelayLine latencyPadL, latencyPadR;
 
@@ -80,7 +87,9 @@ private:
 
     // Topology changes (routing, oversampling, cab on/off) fade out -> switch -> fade in.
     std::atomic<uint64_t> routingCode { Routing::defaults().encode() };
-    uint64_t activeTopology = 0;
+    struct Topology { uint64_t routing = 0; int os = 0; bool cabA = true, cabB = true;
+                      bool operator!= (const Topology& o) const { return routing != o.routing || os != o.os || cabA != o.cabA || cabB != o.cabB; } };
+    Topology activeTopology;
     Routing activeRouting = Routing::defaults();
     int activeOs = 1;
     std::array<bool, 2> activeCabOn { true, true };

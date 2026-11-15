@@ -6,7 +6,7 @@
 
 namespace tz
 {
-enum class AmpVoicing { British = 0, American = 1, Modern = 2 };
+enum class AmpVoicing { British = 0, American = 1, Modern = 2, Overlord = 3, Vapor = 4 };
 enum class AmpChannel { Clean = 0, Crunch = 1, Lead = 2 };
 
 struct AmpKnobs
@@ -14,7 +14,15 @@ struct AmpKnobs
     double gain = 0.5, bass = 0.5, mid = 0.5, treble = 0.5;
     double presence = 0.5, resonance = 0.5, master = 0.5, sag = 0.5;
     bool bright = false;
+    // Overlord
+    bool tight = false;
+    double attack = 0.5;
+    std::array<double, 8> eq {};   // dB, midrange graphic EQ
+    // Vapor-30
+    double vapor = 0.4, bloom = 0.5;
 };
+// Overlord midrange EQ bands (Hz).
+constexpr double kOverlordEq[8] = { 150, 250, 400, 630, 1000, 1600, 2500, 4000 };
 
 class AmpEngine
 {
@@ -66,6 +74,29 @@ public:
                 gainRange = ch == AmpChannel::Clean ? 0.5 : (ch == AmpChannel::Crunch ? 1.6 : 1.0);
                 outputTrim = ch == AmpChannel::Clean ? 1.3 : 1.0;
                 break;
+            case AmpVoicing::Overlord:
+                // Drop-tuned metal: 4 stages always, the TIGHT switch moves the first
+                // coupling cap (what a "tight" switch does on real high-gain heads).
+                parts = stacks::modernHiGain;
+                tightHz = k.tight ? 190.0 : 75.0;
+                s1 = { tightHz, 500, -7.0, 0.0, 15000, 0.4 };
+                s2 = { 80, 0, 0, -0.65, 9500, 0.3 };
+                s3 = { 90, 0, 0, -0.45, 7500, 0.3 };
+                s4 = { 45, 0, 0, 0.0, 6500, 0.4 };
+                pa = { 0.18, 1.7, 0.45, 80, 3600, 0.007, 0.12, 0.18, 0.05 };
+                nStages = 4; stackPosition = 4; potAfter = 2;
+                gainRange = 1.15; outputTrim = 0.95;
+                break;
+            case AmpVoicing::Vapor:
+                // Crystal clean: two gentle stages, lots of headroom; the Vapor circuit
+                // (below) adds drive only while you dig in.
+                parts = stacks::fenderBlackface;
+                s1 = { 20, 0, 0, 0.0, 16000, 0.4 };
+                s2 = { 30, 0, 0, -0.15, 13000, 0.4 };
+                pa = { 0.22, 1.5, 0.45, 80, 4500, 0.010, 0.18, 0.30, 0.05 };
+                nStages = 2; stackPosition = 1; potAfter = 1;
+                gainRange = 0.45; outputTrim = 1.35;
+                break;
             case AmpVoicing::Modern:
                 parts = stacks::modernHiGain;
                 tightHz = ch == AmpChannel::Lead ? 160.0 : (ch == AmpChannel::Crunch ? 110.0 : 40.0);
@@ -84,7 +115,12 @@ public:
         // Loudness balance between channels: saturated channels are naturally much
         // louder (compressed); bring everything near the same perceived level so
         // switching channel or model doesn't jump in volume.
-        outputTrim *= ch == AmpChannel::Clean ? 0.9 : 0.355;
+        const bool cleanish = v == AmpVoicing::Vapor || (v != AmpVoicing::Overlord && ch == AmpChannel::Clean);
+        outputTrim *= cleanish ? 0.9 : 0.355;
+        isOverlord = v == AmpVoicing::Overlord; isVapor = v == AmpVoicing::Vapor; firstEq = true;
+        for (auto& s : sEq) s.prepare (fs, 0.03);
+        sAttack.prepare (fs, 0.03); sVapor.prepare (fs, 0.03);
+        envAtk = 1.0 - std::exp (-1.0 / (0.0015 * fs));
         numStages = nStages;
         stages[0].prepare (T, fs, s1, resetState);
         stages[1].prepare (T, fs, s2, resetState);
@@ -106,6 +142,7 @@ public:
     {
         for (auto& s : stages) s.reset();
         stack.reset(); power.reset(); brightShelf.reset(); cutLp.reset(); depthShelf.reset(); dcOut.reset();
+        attackShelf.reset(); for (auto& b : eq) b.reset(); env = 0;
     }
 
     void setKnobs (const AmpKnobs& k, bool immediate = false)
@@ -128,7 +165,12 @@ public:
             sCut.setTarget (k.presence); sDepth.setTarget (k.resonance);
             sLevel.setTarget (drive);
         }
-        stack.setKnobs (k.treble, k.mid, k.bass, immediate);
+        // Overlord has no MIDDLE knob: its graphic EQ does the mids, the stack mid sits at noon.
+        stack.setKnobs (k.treble, isOverlord ? 0.5 : k.mid, k.bass, immediate);
+        for (size_t b = 0; b < 8; ++b) immediate ? sEq[b].setImmediate (k.eq[b]) : sEq[b].setTarget (k.eq[b]);
+        immediate ? sAttack.setImmediate (k.attack) : sAttack.setTarget (k.attack);
+        immediate ? sVapor.setImmediate (k.vapor) : sVapor.setTarget (k.vapor);
+        envRel = 1.0 - std::exp (-1.0 / ((0.04 + 0.56 * clamp (k.bloom, 0.0, 1.0)) * rate));
         if (isBritish)
             power.setControls (1.0, 0.0, 0.0, k.sag, immediate); // no NFB: presence = Cut, resonance = Depth
         else
@@ -145,9 +187,21 @@ public:
             updateCoefficients (len);
             const double gain = sGain.skip (len);
             const double drive = sLevel.skip (len);
+            const double vap = sVapor.skip (len);
             for (int i = 0; i < len; ++i)
             {
                 double v = x[done + i];
+                if (isOverlord) v = attackShelf.process (v);
+                double dyn = 1.0;
+                if (isVapor)
+                {
+                    // Vapor: follow the picking strength and push the second stage harder
+                    // on the attack of each note (more harmonics when you dig in, clean
+                    // when you play soft). Bloom = how long the push lasts.
+                    const double a = std::abs (v);
+                    env += (a - env) * (a > env ? envAtk : envRel);
+                    dyn = 1.0 + vap * 6.0 * std::min (1.0, env / 0.5);
+                }
                 const double sup = power.supply();
                 for (int s = 0; s < numStages; ++s)
                 {
@@ -161,8 +215,12 @@ public:
                     }
                     else if (s + 1 < numStages)
                         v *= 0.35;
+                    if (isVapor && s == 0) v *= dyn;
                     if (s + 1 == stackPosition)
+                    {
                         v = stack.process (v);
+                        if (isOverlord) for (auto& b : eq) v = b.process (v);
+                    }
                 }
                 // Into the phase inverter / power section.
                 v = v * (1.0 / 12.0) * drive;
@@ -195,6 +253,19 @@ private:
             if (depth != lastDepth) { depthShelf.setLowShelf (rate, 120.0, 0.7, (depth - 0.5) * 10.0); lastDepth = depth; }
         }
         sBright.skip (len); sCut.skip (len); sDepth.skip (len);
+        if (isOverlord)
+        {
+            bool moving = firstEq || sAttack.isSmoothing();
+            for (auto& s : sEq) moving |= s.isSmoothing();
+            if (moving)
+            {
+                for (size_t b = 0; b < 8; ++b) eq[b].setPeak (rate, kOverlordEq[b], 1.4, sEq[b].current());
+                attackShelf.setHighShelf (rate, 1800.0, 0.7, 12.0 * sAttack.current() - 2.0);
+                firstEq = false;
+            }
+            for (auto& s : sEq) s.skip (len);
+            sAttack.skip (len);
+        }
     }
 
     static constexpr int kSub = 16;
@@ -202,7 +273,12 @@ private:
     std::array<TubeStage, 4> stages;
     int numStages = 2, stackPosition = 1, potAfter = 1;
     double gainRange = 1, outputTrim = 1, tightHz = 20;
-    bool isBritish = false;
+    bool isBritish = false, isOverlord = false, isVapor = false, firstEq = true;
+    Biquad attackShelf;
+    std::array<Biquad, 8> eq;
+    std::array<Smoother, 8> sEq;
+    Smoother sAttack, sVapor;
+    double env = 0, envAtk = 0.01, envRel = 0.001;
     ToneStack stack;
     PowerAmp power;
     Biquad brightShelf, depthShelf;
@@ -238,9 +314,10 @@ public:
     void set (AmpVoicing v, AmpChannel ch, const AmpKnobs& k)
     {
         knobs = k;
-        if ((v != voicing || ch != channel) && fadePos < 0)
+        const bool tightChanged = v == AmpVoicing::Overlord && k.tight != tight;
+        if ((v != voicing || ch != channel || tightChanged) && fadePos < 0)
         {
-            voicing = v; channel = ch;
+            voicing = v; channel = ch; tight = k.tight;
             const int idle = 1 - active;
             engines[idle].configure (rate, v, ch, k); // coefficient maths only, no allocation
             fadePos = 0;
@@ -273,6 +350,7 @@ private:
     int active = 0, fadeLen = 1000, fadePos = -1;
     AmpVoicing voicing = AmpVoicing::British;
     AmpChannel channel = AmpChannel::Crunch;
+    bool tight = false;
     AmpKnobs knobs;
     std::vector<float> scratch;
 };
