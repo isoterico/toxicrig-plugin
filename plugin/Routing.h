@@ -58,7 +58,7 @@ struct Routing
     // pedals are appended where the defaults put them.
     static Routing decodeV1 (uint64_t code)
     {
-        constexpr int kOld = 11;
+        static constexpr int kOld = 11;   // static: usable inside the lambda below on MSVC too
         Routing r;
         std::array<int, kOld> posB, posL;
         posB.fill (-1); posL.fill (-1);
