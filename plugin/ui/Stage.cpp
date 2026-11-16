@@ -417,7 +417,9 @@ void PedalView::paint (juce::Graphics& g)
     // Name.
     g.setColour (L.ink);
     static const char* const shortNames[] = { "NOISE GATE", "SUSTAINER", "TREBLE BOOST", "GREEN DRIVE", "TOXIC FUZZ", "GRAPHIC EQ",
-                                              "CHORUS", "PHASER", "TREMOLO", "DELAY", "REVERB" };
+                                              "CHORUS", "PHASER", "TREMOLO", "DELAY", "REVERB",
+                                              "NUCLEAR FUZZ", "BIO-BOOST", "MUTANT MOD" };
+    static_assert (std::size (shortNames) == (size_t) tz::kNumPedals, "one name per pedal");
     juce::ignoreUnused (spec);
     g.setFont (skinFont (SkinId::ToxicLab, FontRole::Label, 12.5f * k));
     g.drawFittedText (shortNames[pedal], juce::Rectangle<float> (8.0f * k, 76.0f * k, W - 16.0f * k, 16.0f * k).toNearestInt(),
