@@ -1,6 +1,6 @@
 ; ToxicRig - installer per Windows (Inno Setup 6).
 ; Compilato automaticamente da GitHub Actions:
-;   ISCC.exe /DAppVersion=0.2.0 /DSourceDir=<cartella con ToxicRig.vst3 e ToxicRig.exe> ToxicRig.iss
+;   ISCC.exe /DAppVersion=0.3.0 /DSourceDir=<cartella con ToxicRig.vst3 e ToxicRig.exe> ToxicRig.iss
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"

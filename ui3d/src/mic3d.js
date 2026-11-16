@@ -16,7 +16,7 @@ export function micFactory(M, tex) {
   // Each mic points along -Z (towards the speaker); its back end is at z = +len.
   function dynamic() {
     const g = new THREE.Group();
-    const lathe = (pts, mat) => { const m = new THREE.Mesh(new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), 48), mat); m.rotation.x = -Math.PI / 2; g.add(m); return m; };
+    const lathe = (pts, mat) => { const m = new THREE.Mesh(new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), 48), mat); m.rotation.x = Math.PI / 2; g.add(m); return m; };
     lathe([[0.0, 0.0], [0.0105, 0.001], [0.0125, 0.008], [0.0125, 0.03]], inner);
     const gr = new THREE.Mesh(new THREE.CylinderGeometry(0.0128, 0.0128, 0.03, 48, 1, true), mesh); gr.rotation.x = Math.PI / 2; gr.position.z = 0.016; g.add(gr);
     const capm = new THREE.Mesh(new THREE.CircleGeometry(0.0128, 48), mesh); capm.position.z = 0.0005; capm.rotation.y = Math.PI; g.add(capm);
@@ -62,6 +62,7 @@ export function micFactory(M, tex) {
     part("weight", new THREE.CylinderGeometry(0.02, 0.02, 0.06, 20));
     part("clip", new THREE.CylinderGeometry(0.009, 0.009, 0.03, 16));
     part("swivel", new THREE.SphereGeometry(0.009, 16, 8));
+    part("clipRing", new THREE.TorusGeometry(0.0145, 0.0032, 12, 32, Math.PI * 1.6), blackPaint);
     for (let i = 0; i < 3; i++) { part("leg" + i, new THREE.CylinderGeometry(0.0065, 0.0065, 1, 12)); part("foot" + i, new THREE.SphereGeometry(0.009, 12, 8), M.Rubber); }
     return g;
   }
@@ -81,7 +82,11 @@ export function micFactory(M, tex) {
       m.position.copy(tip); m.rotation.set(0, 0, 0);
       const side = speaker.x <= 0 ? -1 : 1;
       // Where the clip grabs the mic: the back of a pencil mic, the bottom of a big condenser.
-      const grip = m.userData.vertical ? tip.clone().add(new THREE.Vector3(0, -0.165, 0.028)) : tip.clone().add(new THREE.Vector3(0, 0, m.userData.len + 0.012));
+      // One attachment point on the mic body's axis. Clip, swivel and boom all derive from it,
+      // so the arm always ends exactly on the surface of the body it holds.
+      const grip = m.userData.vertical ? tip.clone().add(new THREE.Vector3(0, -0.12, 0.028)) : tip.clone().add(new THREE.Vector3(0, 0, 0.12));
+      const bodyR = m.userData.vertical ? 0.026 : 0.0115;
+      const axisV = m.userData.vertical ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
       const clutch = new THREE.Vector3(grip.x + side * 0.42, grip.y + (m.userData.vertical ? -0.02 : 0.1), grip.z + 0.2);
       const base = new THREE.Vector3(clutch.x, -0.012, clutch.z);
       const hubY = 0.12;
@@ -89,18 +94,27 @@ export function micFactory(M, tex) {
       between(P("poleUpper"), clutch.clone().setY(Math.max(hubY + 0.05, clutch.y * 0.55) - 0.02), clutch.clone().add(new THREE.Vector3(0, -0.02, 0)));
       P("hub").position.copy(base).setY(hubY);
       P("clutch").position.copy(clutch);
-      const dir = grip.clone().sub(clutch).normalize();
+      // Boom end: the point on the body surface that faces the arm (projected off the body axis).
+      const toArm = clutch.clone().sub(grip);
+      const t = toArm.clone().addScaledVector(axisV, -toArm.dot(axisV)).normalize();
+      const boomEnd = grip.clone().addScaledVector(t, bodyR + 0.002);
+      const dir = boomEnd.clone().sub(clutch).normalize();
       P("clutch").quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(-dir.z, 0, dir.x).normalize());
       P("knob").position.copy(clutch).add(new THREE.Vector3(-dir.z, 0, dir.x).normalize().multiplyScalar(0.028));
       P("knob").quaternion.copy(P("clutch").quaternion);
       const tail = clutch.clone().addScaledVector(dir, -0.2);
-      const boomEnd = grip.clone().addScaledVector(dir, -0.018);
       between(P("boom"), tail, boomEnd);
       P("weight").position.copy(tail); P("weight").quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      // Swivel joint sits exactly on the body surface: the arm ends there.
       P("swivel").position.copy(boomEnd);
-      // Clip holds the mic along its own axis.
-      P("clip").position.copy(grip);
-      P("clip").quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), m.userData.vertical ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1));
+      // Clip: short bracket between the swivel and the body, aligned with the arm's last bit.
+      P("clip").position.copy(boomEnd);
+      P("clip").quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), t);
+      P("clip").scale.set(1, 1, 1);
+      // Horseshoe clip wrapped around the body at the attachment point, sized to its radius.
+      P("clipRing").position.copy(grip);
+      P("clipRing").scale.setScalar((bodyR + 0.003) / 0.0145);
+      P("clipRing").quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), axisV).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI * 0.7));
       for (let i = 0; i < 3; i++) {
         const a = i * Math.PI * 2 / 3 + 0.5; const foot = base.clone().add(new THREE.Vector3(Math.cos(a) * 0.27, 0.0, Math.sin(a) * 0.27));
         between(P("leg" + i), base.clone().setY(hubY - 0.01), foot.clone().setY(-0.004));

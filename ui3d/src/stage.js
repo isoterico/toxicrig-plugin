@@ -124,9 +124,9 @@ export function buildStage(renderer, scene, camera, tex, M) {
   const smokeTex = new THREE.TextureLoader().load("tex/smoke.png");
   const haze = [];
   for (let i = 0; i < 14; i++) {
-    const m = new THREE.SpriteMaterial({ map: smokeTex, color: [0x6a3cc0, 0x2a8a20, 0x8c6a5a][i % 3], transparent: true, opacity: 0.03 + 0.03 * Math.random(), depthWrite: false, fog: false });
+    const m = new THREE.SpriteMaterial({ map: smokeTex, color: [0x6a3cc0, 0x2a8a20, 0x8c6a5a][i % 3], transparent: true, opacity: 0.018 + 0.02 * Math.random(), depthWrite: false, fog: false });
     const sp = new THREE.Sprite(m); const sc = 1.2 + Math.random() * 1.8; sp.scale.set(sc * 1.6, sc, 1);
-    sp.position.set((Math.random() - 0.5) * 4.5, 0.4 + Math.random() * 1.6, -1.3 + Math.random() * 1.4);
+    sp.position.set((Math.random() - 0.5) * 4.5, 0.9 + Math.random() * 1.3, -1.4 + Math.random() * 0.7);  // above and behind the rig, never over the floor in front
     sp.userData = { vx: (Math.random() - 0.5) * 0.02, ph: Math.random() * 6 }; scene.add(sp); haze.push(sp);
   }
   // Dust floating in the light.
@@ -156,7 +156,7 @@ export function buildStage(renderer, scene, camera, tex, M) {
   composer.addPass(gtao);
   const bokeh = new BokehPass(scene, camera, { focus: 2, aperture: 0.0025, maxblur: 0.006 });
   composer.addPass(bokeh);
-  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.2, 0.25, 3.6);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.05, 0.2, 3.6);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
   // Lens: vignette, a touch of chromatic fringing at the edges, film grain.

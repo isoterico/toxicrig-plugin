@@ -88,11 +88,11 @@ jobs:
           if [ "$RUNNER_OS" == "macOS" ]; then
             curl -sL -o pv.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
             unzip -q pv.zip
-            ./pluginval.app/Contents/MacOS/pluginval --strictness-level 5 --validate-in-process --skip-gui-tests dist/ToxicRig.vst3 | tee pluginval.txt || echo "::warning::pluginval reported problems"
+            ./pluginval.app/Contents/MacOS/pluginval --strictness-level 10 --validate-in-process --skip-gui-tests dist/ToxicRig.vst3 | tee pluginval.txt || echo "::warning::pluginval reported problems"
           else
             curl -sL -o pv.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip
             unzip -q pv.zip
-            ./pluginval.exe --strictness-level 5 --validate-in-process --skip-gui-tests dist/ToxicRig.vst3 | tee pluginval.txt || echo "::warning::pluginval reported problems"
+            ./pluginval.exe --strictness-level 10 --validate-in-process --skip-gui-tests dist/ToxicRig.vst3 | tee pluginval.txt || echo "::warning::pluginval reported problems"
           fi
 
       - uses: actions/upload-artifact@v4

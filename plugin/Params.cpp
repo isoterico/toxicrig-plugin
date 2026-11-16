@@ -89,8 +89,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     };
     auto choiceParam = [&] (const String& id, const String& name, const StringArray& c, int def)
     { layout.add (std::make_unique<AudioParameterChoice> (ParameterID { id, 1 }, name, c, def)); };
+    // On/off switches. juce::AudioParameterBool keeps whatever in-between value a host writes (0.47...)
+    // and a later state restore that says "0" may not overwrite it, so a pedal could come back in the
+    // wrong state. A two-step choice always snaps to exactly 0 or 1; the saved value is still 0/1, so
+    // sessions written by earlier versions load unchanged, and hosts still see a switch.
+    struct SwitchParam final : AudioParameterChoice
+    {
+        SwitchParam (const String& id, const String& name, bool def)
+            : AudioParameterChoice (ParameterID { id, 1 }, name, StringArray { "Off", "On" }, def ? 1 : 0) {}
+        bool isBoolean() const override { return true; }
+    };
     auto boolParam = [&] (const String& id, const String& name, bool def)
-    { layout.add (std::make_unique<AudioParameterBool> (ParameterID { id, 1 }, name, def)); };
+    { layout.add (std::make_unique<SwitchParam> (id, name, def)); };
 
     floatParam (ids::inGain, "Input Gain", -24.f, 24.f, 0.f, 0.f, "dB");
     floatParam (ids::outVol, "Output Volume", -48.f, 12.f, 0.f, 0.f, "dB");
@@ -124,9 +134,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         floatParam (ampId (slot, "attack"), "Amp " + S + " Attack (Overlord)", 0.f, 1.f, 0.5f, 0.f, "");
         for (int b = 0; b < 8; ++b)
             floatParam (ampId (slot, ("eq" + String (b + 1)).toRawUTF8()), "Amp " + S + " EQ " + overlordEqNames[b] + " (Overlord)", -12.f, 12.f, 0.f, 0.f, "dB");
-        floatParam (ampId (slot, "vapor"), "Amp " + S + " Vapor (Vapor-30)", 0.f, 1.f, 0.4f, 0.f, "");
-        floatParam (ampId (slot, "bloom"), "Amp " + S + " Bloom (Vapor-30)", 0.f, 1.f, 0.5f, 0.f, "");
-        floatParam (ampId (slot, "amb"), "Amp " + S + " D/R Ambience (Vapor-30)", 0.f, 1.f, 0.25f, 0.f, "");
+        floatParam (ampId (slot, "vapor"), "Amp " + S + " Depth (Vapor-30)", 0.f, 1.f, 0.4f, 0.f, "");
+        floatParam (ampId (slot, "bloom"), "Amp " + S + " Resonance (Vapor-30)", 0.f, 1.f, 0.5f, 0.f, "");
+        floatParam (ampId (slot, "amb"), "Amp " + S + " Presence D/R (Vapor-30)", 0.f, 1.f, 0.25f, 0.f, "");
         floatParam (ampId (slot, "amb_width"), "Amp " + S + " Width (Vapor-30)", 0.f, 1.f, 0.7f, 0.f, "");
         boolParam (ampId (slot, "standby"), "Amp " + S + " Standby (Vapor-30)", false);
         boolParam (ampId (slot, "power"), "Amp " + S + " Power (Vapor-30)", true);

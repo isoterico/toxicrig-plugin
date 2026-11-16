@@ -142,7 +142,7 @@ def tube(prefix, x, y, z, height=0.06, r=0.0135):
     cyl(prefix + "_base", r * 1.05, 0.012, (x, y, tz - height / 2 - 0.004), "Bakelite", rot=(0, 0, 0))
     cyl(prefix + "_glass", r, height * 0.75, (x, y, tz - height * 0.1), "Glass", rot=(0, 0, 0))
     sphere(prefix + "_dome", r, (x, y, tz + height * 0.27), "Glass", scale=(1, 1, 1.3))
-    cyl(prefix + "_plate", r * 0.55, height * 0.5, (x, y, tz - height * 0.05), "TubePlate", rot=(0, 0, 0), verts=6)
+    cyl(prefix + "_plate", r * 0.55, height * 0.5, (x, y, tz - height * 0.05), "PlateSigil", rot=(0, 0, 0), verts=6)
     cyl(prefix + "_getter", r * 0.75, 0.002, (x, y, tz + height * 0.3), "Getter", rot=(0, 0, 0), verts=24)
     cyl(prefix + "_heater", 0.0028, height * 0.42, (x, y, tz - height * 0.05), "Heater", rot=(0, 0, 0), verts=10)
 

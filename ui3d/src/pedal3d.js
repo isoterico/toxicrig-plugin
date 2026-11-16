@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { toNorm } from "./pedals.js";
 import { drawHazard } from "./materials.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 export const PH = 0.05, PD = 0.118, BOARD_TOP = 0.034;
 
@@ -327,6 +328,38 @@ export function pedalFactory(renderer, M, tex) {
     grp.traverse((m) => { if (m.isMesh) m.userData.pedalId = def.id; });
     for (const id in ctl) ctl[id].obj.traverse((o) => { o.userData.ctl = { kind: "pedalCtl", pedal: def.id, param: id }; });
     fs.traverse((o) => { o.userData.ctl = { kind: "footswitch", pedal: def.id }; });
+    // Pedals built in Blender: enclosure, knobs and footswitch come from the model file. Procedural
+    // parts are hidden; jacks and cable anchors keep using the same coordinates.
+    const MODELS = {
+      nuke: { file: "models/nfuzz.json", ids: ["drive", "gate", "volume"] },
+      bio: { file: "models/bioboost.json", ids: ["boost", "mode"] },
+      mutant: { file: "models/mutant.json", ids: ["mode", "speed"] },
+    };
+    const mdlDef = MODELS[def.custom];
+    if (mdlDef) {
+      const mdl = new THREE.Group(); mdl.name = "pedalModel"; mdl.position.y = BOARD_TOP; grp.add(mdl);
+      grp.children.forEach((c) => { if (c !== mdl) c.visible = false; });
+      new GLTFLoader().load(mdlDef.file, (g) => {
+        mdl.add(g.scene);
+        g.scene.traverse((o) => {
+          if (o.isMesh) {
+            o.castShadow = o.receiveShadow = true;
+            const named = M[o.material && o.material.name]; if (named) o.material = named;
+            o.userData.pedalId = def.id;
+            // This pedal's own LED and tube glow, so they light up independently of other pedals
+            if (o.name === "led") o.material = ledMat;
+            if (def.custom === "mutant" && o.name.startsWith("tube0_heater")) { o.material = o.material.clone(); o.material.emissive = new THREE.Color(0xb050ff); extras.tubeGlow = [o.material, extras.tubeGlow ? extras.tubeGlow[1] : o.material]; }
+            if (def.custom === "mutant" && o.name.startsWith("tube0_plate")) { o.material = o.material.clone(); o.material.emissive = new THREE.Color(0x6a20c0); if (extras.tubeGlow) extras.tubeGlow[1] = o.material; else extras.tubeGlow = [o.material, o.material]; }
+          }
+          if (mdlDef.ids.includes(o.name)) {
+            const q = def.params.find((pp) => pp.id === o.name);
+            ctl[o.name] = { obj: o, kind: q && q.choices ? "choice" : "knob", par: q };
+            o.traverse((x) => { x.userData.ctl = { kind: "pedalCtl", pedal: def.id, param: o.name }; });
+          }
+          if (o.name === "footswitch" || o.name === "footswitch_bezel") o.traverse((x) => { x.userData.ctl = { kind: "footswitch", pedal: def.id }; });
+        });
+      });
+    }
     const st = { def, grp, ctl, led: ledMat, extras, on: false, values: {}, jack: { y: topY + 0.006, z: jz, x: jx, top: true } };
     for (const q of def.params) st.values[q.id] = toNorm(q, q.def);
     return st;

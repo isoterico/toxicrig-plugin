@@ -9,6 +9,7 @@ import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLigh
 RectAreaLightUniformsLib.init();
 import { buildStage } from "./stage.js";
 import { pedalFactory, PH, PD, BOARD_TOP } from "./pedal3d.js";
+import { buildRack } from "./rack.js";
 import { micFactory } from "./mic3d.js";
 
 const $ = (s) => document.querySelector(s);
@@ -151,6 +152,11 @@ function processAmp(def, root) {
   a.input = root.getObjectByName("input_hole").position.clone();
   a.loop = root.getObjectByName("fxloop_hole").position.clone();
   a.box = new THREE.Box3().setFromObject(root);
+  // Framing box: from the floor up, no wider than the real head/cab front. A stray mesh in a model
+  // (a glow disc, a hidden helper) must not push the camera away.
+  const halfW = Math.max(a.panel.w, a.cab.w) / 2 + 0.04;
+  a.box.min.x = Math.max(a.box.min.x, -halfW); a.box.max.x = Math.min(a.box.max.x, halfW);
+  a.box.min.y = Math.max(a.box.min.y, 0); a.box.min.z = Math.max(a.box.min.z, -0.25); a.box.max.z = Math.min(a.box.max.z, 0.25);
   a.cabTop = a.cab.p.y + a.cab.h / 2 + 0.006;
   // Light spilling from the tubes, flickering a little like real heaters.
   const tubeObj = root.getObjectByName("tube0_heater") || root.getObjectByName("Heater");
@@ -274,7 +280,7 @@ function cable(a, b, mat, o = {}) {
   const mid = a1.clone().lerp(b1, 0.5);
   mid.y = o.arc != null ? Math.max(a1.y, b1.y) + o.arc : Math.max(o.floor ?? BOARD_TOP + 0.004, Math.min(a1.y, b1.y) - (o.sag ?? 0.02));
   if (o.midZ != null) mid.z = o.midZ;
-  const curve = new THREE.CatmullRomCurve3([a0, a1, mid, b1, b0], false, "centripetal");
+  const curve = new THREE.CatmullRomCurve3(o.via ? [a0, a1, ...o.via, b1, b0] : [a0, a1, mid, b1, b0], false, "centripetal");
   const m = new THREE.Mesh(new THREE.TubeGeometry(curve, 90, 0.0034, 10, false), mat); m.castShadow = true; cables.add(m);
   cables.add(plug(a, da), plug(b, db));
 }
@@ -297,7 +303,12 @@ function rebuildCables() {
   if (pre.length) {
     cable(guitar, jackPos(pre[0], -1), cableMatG, { da: new THREE.Vector3(1, 0, -0.3), db: jackDir(pre[0], -1), floor: -0.006, sag: 0.1, la: 0.12, lb: 0.03 });
     for (let i = 0; i + 1 < pre.length; i++) cable(jackPos(pre[i], 1), jackPos(pre[i + 1], -1), cableMat, { da: jackDir(pre[i], 1), db: jackDir(pre[i + 1], -1), la: 0.006, lb: 0.006, arc: 0.03 });
-    cable(jackPos(pre[pre.length - 1], 1), ampIn, cableMatG, { da: jackDir(pre[pre.length - 1], 1), db: FRONT, la: 0.05, lb: 0.12, floor: -0.006, sag: 0.3, midZ: BOARD.z - BOARD.d / 2 - 0.06 });
+    // Out of the last pedal along the front row, round the right end of the board, then behind it to the amp:
+    // never over the loop row.
+    const pa = jackPos(pre[pre.length - 1], 1), ex = BOARD.x + BOARD.w / 2 + 0.05;
+    const via = [new THREE.Vector3((pa.x + ex) / 2, BOARD_TOP + 0.03, pa.z + 0.02), new THREE.Vector3(ex, 0.01, pa.z + 0.03),
+      new THREE.Vector3(ex + 0.02, -0.006, BOARD.z - BOARD.d / 2 - 0.08), new THREE.Vector3((ex + ampIn.x) / 2, -0.006, BOARD.z - BOARD.d / 2 - 0.12)];
+    cable(pa, ampIn, cableMatG, { da: jackDir(pre[pre.length - 1], 1), db: FRONT, la: 0.03, lb: 0.12, via });
   } else cable(guitar, ampIn, cableMatG, { da: new THREE.Vector3(1, 0, -0.3), db: FRONT, floor: -0.006, sag: 0.3, la: 0.15, lb: 0.12 });
   if (loop.length) {
     cable(ampLoop, jackPos(loop[0], -1), cableMatV, { da: FRONT, db: jackDir(loop[0], -1), la: 0.1, lb: 0.03, floor: -0.006, sag: 0.3, midZ: BOARD.z - BOARD.d / 2 - 0.05 });
@@ -332,7 +343,7 @@ function shotSpec(name, arg) {
   if (name === "wide") {
     const b = amp.box.clone(); if (boardGroup.visible) b.expandByPoint(new THREE.Vector3(BOARD.x - BOARD.w / 2, 0, BOARD.z + BOARD.d / 2)).expandByPoint(new THREE.Vector3(BOARD.x + BOARD.w / 2, 0, BOARD.z));
     const s = b.getBoundingSphere(new THREE.Sphere());
-    return { tgt: s.center.clone().add(new THREE.Vector3(0, -0.02, 0)), theta: -0.38, phi: 1.16, sphere: s.radius * 0.86, ap: 0.003 };
+    return { tgt: s.center.clone().add(new THREE.Vector3(0, -0.02, 0)), theta: -0.38, phi: 1.16, sphere: s.radius * 0.8, ap: 0.003 };
   }
   if (name === "hero") { const b = amp.box; const c = new THREE.Vector3(0, amp.panel.p.y, amp.panel.p.z); return { tgt: c, theta: -0.3, phi: Math.PI / 2 - 0.04, box: [amp.panel.w * 1.18, amp.panel.h * 1.25], ap: 0.006 }; }
   if (name === "amp") return { tgt: amp.panel.p.clone(), theta: 0.0, phi: Math.PI / 2 - 0.05, box: [amp.panel.w + 0.03, amp.panel.h + 0.04], ap: 0.012 };
@@ -347,17 +358,20 @@ function shotSpec(name, arg) {
 function resolveShot(spec) {
   const vfov = THREE.MathUtils.degToRad(camera.fov), aspect = innerWidth / innerHeight;
   const hfov = 2 * Math.atan(Math.tan(vfov / 2) * aspect);
-  let uW = 1, uH = 1; const wideScreen = innerWidth >= 820;
-  if (spec.panel) { uH = 0.8; }
+  // Frame the subject inside the free part of the screen: the rack bar sits on top, the dock (and the
+  // control chips in close-ups) at the bottom. Bigger amps get a farther camera, smaller ones a closer one.
+  const h = innerHeight, ui = !document.body.classList.contains("clean");
+  const rt = ui ? Math.min(0.16, 74 / h) : 0, rb = spec.panel ? 0.2 : ui ? Math.min(0.2, (innerWidth < 1180 ? 170 : 112) / h) : 0;
+  const uW = 1, uH = 1 - rt - rb;
   let r;
-  if (spec.sphere) r = spec.sphere / Math.sin(Math.min(vfov, hfov) / 2);
+  if (spec.sphere) r = spec.sphere / Math.sin(Math.min(vfov * uH, hfov) / 2);
   else { const [bw, bh] = spec.box; r = Math.max((bh / 2) / Math.tan(vfov / 2) / uH, (bw / 2) / Math.tan(hfov / 2) / uW) * 1.04; }
   const tgt = spec.tgt.clone();
-  if (spec.panel) {
+  {
     const off = new THREE.Vector3().setFromSpherical(new THREE.Spherical(r, spec.phi, spec.theta));
     const fwd = off.clone().negate().normalize(), right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize(), upv = new THREE.Vector3().crossVectors(right, fwd).normalize();
-    const visW = 2 * Math.tan(hfov / 2) * r, visH = 2 * Math.tan(vfov / 2) * r;
-    tgt.addScaledVector(upv, -visH * (1 - uH) / 2);
+    const visH = 2 * Math.tan(vfov / 2) * r;
+    tgt.addScaledVector(upv, -visH * (rb - rt) / 2);
   }
   return { tgt, sph: new THREE.Spherical(r, spec.phi, spec.theta), ap: spec.ap, focus: spec.tgt.clone() };
 }
@@ -477,6 +491,7 @@ canvas.addEventListener("wheel", (e) => {
 const micCm = () => Math.round(1 + cabState.dist * 29);
 
 function setCtl(c, v) {
+  changed();
   if (c.kind === "ampKnob") { ampVals[c.id] = v; applyAmpVals(amp); }
   else if (c.kind === "ampSlider") { ampVals[c.id] = Math.round((v * 24 - 12) * 2) / 2; applyAmpVals(amp); }
   else { const st = PEDAL[c.pedal], par = st.ctl[c.param].par; st.values[c.param] = par.choices ? Math.round(v * (par.choices.length - 1)) / (par.choices.length - 1) : v; PF.apply(st); refreshPanel(); }
@@ -505,7 +520,7 @@ function click(e, hit) {
     return;
   }
   if (shot.name === "pedal") {
-    if (c?.kind === "footswitch" && c.pedal === shot.arg) { const st = PEDAL[c.pedal]; st.on = !st.on; PF.apply(st); refreshPanel(); return; }
+    if (c?.kind === "footswitch" && c.pedal === shot.arg) { const st = PEDAL[c.pedal]; st.on = !st.on; PF.apply(st); refreshPanel(); changed(); return; }
     if (c?.kind === "pedalCtl" && c.pedal === shot.arg) {
       const st = PEDAL[c.pedal]; if (st.ctl[c.param].kind === "bool") { st.values[c.param] = st.values[c.param] >= 0.5 ? 0 : 1; PF.apply(st); refreshPanel(); showValue(c, e); hideBubble(800); } return;
     }
@@ -528,7 +543,7 @@ function dropPedal(st) {
   const idx = chain[row].map((id) => PEDAL[id].grp.position.x).filter((x) => x < p.x).length;
   if (rowLayout(row, [...chain[row], st.def.id]).free < -0.001) { from.splice(st.index, 0, st.def.id); say("Quella fila è piena: sposta prima un altro pedale."); }
   else chain[row].splice(idx, 0, st.def.id);
-  layoutChain(); setHint(shot.name === "board" ? "board" : "wide");
+  layoutChain(); setHint(shot.name === "board" ? "board" : "wide"); changed();
 }
 
 // ------------------------------------------------------------------ UI flow
@@ -613,7 +628,7 @@ function addPedal(id, row) {
   const st = pedalState(id); PF.apply(st);
   if (row === "pre" && LOOP_ONLY.has(id)) row = "loop";
   if (rowLayout(row, [...chain[row], id]).free < -0.001) { say("Questa fila è piena."); return; }
-  chain[row].push(id); layoutChain(); setTimeout(() => openPedal(id), 480);
+  chain[row].push(id); layoutChain(); changed(); setTimeout(() => openPedal(id), 480);
 }
 
 // ------------------------------------------------------------------ in-scene HUD
@@ -687,8 +702,8 @@ function reorder(id, a) {
   if (a === "left" && i > 0) { arr.splice(i, 1); arr.splice(i - 1, 0, id); }
   else if (a === "right" && i < arr.length - 1) { arr.splice(i, 1); arr.splice(i + 1, 0, id); }
   else if (a === "row") { const to = st.row === "pre" ? "loop" : "pre"; if (to === "pre" && LOOP_ONLY.has(id)) return say(st.def.name + " lavora solo nel loop FX, dopo l'ampli."); if (rowLayout(to, [...chain[to], id]).free < -0.001) return say("L'altra fila è piena."); arr.splice(i, 1); chain[to].push(id); }
-  else if (a === "remove") { arr.splice(i, 1); boardGroup.remove(st.grp); layoutChain(); back(); return; }
-  layoutChain(); refreshHud();
+  else if (a === "remove") { arr.splice(i, 1); boardGroup.remove(st.grp); layoutChain(); changed(); back(); return; }
+  layoutChain(); refreshHud(); changed();
   // The camera follows the pedal to its new place.
   setTimeout(() => { if (hud.dataset.pedal === id) goShot("pedal", id); }, 580);
 }
@@ -723,6 +738,33 @@ function micThumb(id) {
   const url = snapshot(m, c, m.userData.vertical ? 0.42 : 0.36, 1.2, 0.9);
   m.visible = vis; return (thumbs["m_" + id] = url);
 }
+
+// ------------------------------------------------------------------ rig state (presets, A/B)
+// A rig is everything that defines the sound: amp and its controls, the pedal chain in order with each
+// pedal's on/off and settings, cab and mic. Presets and A/B slots are snapshots of this object.
+function snapshotRig() {
+  const pedals = {};
+  for (const id of [...chain.pre, ...chain.loop]) pedals[id] = { on: PEDAL[id].on, values: { ...PEDAL[id].values } };
+  const { ir, ...cab } = cabState;
+  return { amp: amp?.def.id || null, ampVals: { ...ampVals }, chain: { pre: [...chain.pre], loop: [...chain.loop] }, pedals, cab };
+}
+const AMP_DEFAULTS = { ...ampVals };
+async function applyRig(r) {
+  if (r.amp && (!amp || amp.def.id !== r.amp)) { await placeAmp(r.amp); await new Promise((ok) => { const w = () => (rise ? setTimeout(w, 60) : ok()); w(); }); }
+  Object.assign(ampVals, AMP_DEFAULTS, r.ampVals || {}); if (amp) applyAmpVals(amp);
+  const keep = new Set([...r.chain.pre, ...r.chain.loop]);
+  for (const id of [...chain.pre, ...chain.loop]) if (!keep.has(id)) { boardGroup.remove(PEDAL[id].grp); PEDAL[id].on = false; }
+  chain.pre = [...r.chain.pre]; chain.loop = [...r.chain.loop];
+  for (const id of keep) {
+    const st = pedalState(id), p = r.pedals?.[id];
+    for (const q of st.def.params) st.values[q.id] = p?.values?.[q.id] ?? toNorm(q, q.def);
+    st.on = p ? !!p.on : !!r.on?.[id]; PF.apply(st);
+  }
+  if (r.cab) { Object.assign(cabState, r.cab); placeMic(); }
+  layoutChain(); refreshHud?.();
+}
+const rack = buildRack($("#rack"), { snapshot: snapshotRig, applyRig, say });
+const changed = () => rack.markDirty();
 
 // Dock: the four places of the stage, always one tap away.
 function buildDock() {
@@ -838,6 +880,6 @@ new GLTFLoader(manager).load("models/props.json", (g) => {
   scene.add(g.scene);
 });
 
-window.__rig = { setPass: (k, v) => { stage[k].enabled = v; }, placeAmp, goShot, openPedal, openAmp, openCab, back, chain, PEDAL, addPedal, reorder, ampVals, cabState, placeMic,
+window.__rig = { meters: (m) => rack.meters(m), pitch: (hz) => rack.pitch(hz), snapshotRig, applyRig, rack, setPass: (k, v) => { stage[k].enabled = v; }, placeAmp, goShot, openPedal, openAmp, openCab, back, chain, PEDAL, addPedal, reorder, ampVals, cabState, placeMic,
   screenOf: (o) => { const v = new THREE.Vector3(); o.getWorldPosition(v); v.project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; },
   get amp() { return amp; }, stage, scene, setQuality: (q) => { quality = q; applyQuality(); } };

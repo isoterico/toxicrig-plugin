@@ -105,9 +105,9 @@ export const AMPS = [
     sliders: ["150", "250", "400", "630", "1k", "1.6k", "2.5k", "4k"].map((f, i) => ({ id: "eq" + (i + 1), label: f + " Hz" })), tube: 0x46ff2a },
   { id: "vapor", model: 4, name: "Vapor-30", file: "models/vapor30.json", cab: "American 1x12",
     tags: ["Ambient / Shoegaze", "Crystal Clean", "D/R integrato"],
-    text: ["Puliti cristallini e tridimensionali. Il circuito VAPOR satura solo quando plettri forte, BLOOM decide quanto dura.", "D/R aggiunge delay + riverbero in stereo, WIDTH lo allarga. STANDBY e POWER spengono l'ampli."],
-    knobs: [K("gain", "GAIN"), K("treble", "TREBLE"), K("master", "VOLUME"), K("mid", "MIDDLE"), K("bass", "BASS"), K("vapor", "VAPOR"), K("bloom", "BLOOM"),
-            K("amb", "D/R MIX"), K("resonance", "DEPTH"), K("presence", "PRESENCE"), K("amb_width", "WIDTH")],
+    text: ["Puliti cristallini e tridimensionali. Il circuito VAPOR satura solo quando plettri forte, RESONANCE decide quanto dura.", "D/R aggiunge delay + riverbero in stereo, WIDTH lo allarga. STANDBY e POWER spengono l'ampli."],
+    knobs: [K("gain", "GAIN"), K("treble", "TREBLE"), K("master", "VOLUME"), K("mid", "MIDDLE"), K("bass", "BASS"), K("vapor", "DEPTH"), K("bloom", "RESONANCE"),
+            K("amb", "PRESENCE"), K("amb_width", "WIDTH")],
     toggles: [{ id: "bright", n: 2, states: ["OFF", "ON"], label: "BRIGHT" }, { id: "standby", n: 2, states: ["OFF", "ON"], label: "STANDBY" }, { id: "power", n: 2, states: ["OFF", "ON"], label: "POWER" }], tube: 0xb050ff },
 ];
 

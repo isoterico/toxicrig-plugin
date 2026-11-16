@@ -107,6 +107,39 @@ body[data-shot="cab"] #hint,body[data-shot="pedal"] #hint{display:none}
 #loading i{display:block;width:240px;height:2px;background:#1d1c27;margin:12px auto 0;border-radius:2px;overflow:hidden}
 #loading i b{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--v),var(--g));transition:width .2s}
 @media (max-width:640px){#title b{font-size:17px}#title span{font-size:13px}#dock button{padding:0 11px;font-size:14px}.micbtn img{width:64px;height:44px}}
+#rack{position:fixed;right:max(16px,env(safe-area-inset-right));top:max(12px,env(safe-area-inset-top));z-index:7;display:flex;align-items:center;gap:10px;padding:6px 12px;border-radius:16px;font:600 13px Rajdhani;letter-spacing:.06em;color:var(--dim)}
+#rack button{font:700 13px Rajdhani;letter-spacing:.08em;color:var(--dim);background:transparent;border:0;border-radius:10px;min-height:34px;padding:0 10px;cursor:pointer}
+#rack button:hover{color:var(--ink);background:rgba(255,255,255,.06)}
+.rk-sep{width:1px;height:26px;background:rgba(255,255,255,.1)}
+.rk-lvl{display:flex;align-items:center;gap:7px}.rk-l{font-size:11px;color:#8d8aa3}.rk-v{width:34px;text-align:right;font:600 12px SpaceGrotesk;color:var(--ink)}
+.rk-knob{width:26px;height:26px;border-radius:50%;cursor:ns-resize;touch-action:none;background:radial-gradient(circle at 35% 30%,#4a4858,#14131a 70%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),0 2px 5px rgba(0,0,0,.6);position:relative}
+.rk-knob i{position:absolute;left:50%;top:3px;width:2px;height:9px;margin-left:-1px;background:var(--g);border-radius:2px;transform-origin:50% 10px;box-shadow:0 0 6px var(--g)}
+.rk-meter{display:flex;gap:2px;height:26px;width:9px}.rk-meter b{flex:1;background:linear-gradient(0deg,#2bd40e,#c6ff3a 70%,#ffb000 88%,#ff3b2e);transform-origin:bottom;transform:scaleY(0);border-radius:1px;transition:transform 60ms linear}
+.rk-meter{background:rgba(0,0,0,.45);padding:1px;border-radius:2px}.rk-meter b.clip{box-shadow:0 0 6px #ff3b2e}
+.rk-preset{display:flex;align-items:center;gap:2px}.rk-ar{font-size:18px!important;padding:0 8px!important}
+.rk-name{display:flex!important;flex-direction:column;align-items:flex-start;justify-content:center;min-width:150px;color:var(--ink)!important;background:rgba(0,0,0,.35)!important;box-shadow:inset 0 0 0 1px rgba(155,77,255,.3)}
+.rk-name span{font:700 14px Rajdhani;letter-spacing:.05em}.rk-name em{font:500 10px SpaceGrotesk;font-style:normal;color:#c9a8ff;letter-spacing:.04em;min-height:12px}
+.rk-save{color:#c9a8ff!important}
+.rk-ab{display:flex;gap:2px;background:rgba(0,0,0,.35);border-radius:10px;padding:2px}.rk-ab [data-s]{min-width:32px}
+.rk-ab [data-s].on{color:#0b0b0e!important;background:var(--g)!important;box-shadow:0 0 12px rgba(57,255,20,.45)}
+.rk-tuner{display:flex!important;align-items:center;gap:6px}.rk-tuner.on{color:var(--g)!important;box-shadow:inset 0 0 0 1px rgba(57,255,20,.4)}
+.rk-fork{width:7px;height:14px;border:2px solid currentColor;border-top:0;border-radius:0 0 4px 4px;position:relative}
+.rk-list{position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);min-width:280px;max-height:60vh;overflow:auto;padding:6px;border-radius:14px;display:none}
+.rk-list.on{display:block}.rk-it{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:10px;cursor:pointer;color:var(--ink)}
+.rk-it:hover,.rk-it.on{background:rgba(155,77,255,.16)}.rk-it span{flex:1;font:700 14px Rajdhani}.rk-it small{font:500 11px SpaceGrotesk;color:#8d8aa3}
+.rk-it button{min-height:24px!important;padding:0 6px!important}
+.rk-tune{position:absolute;top:calc(100% + 8px);right:0;width:300px;padding:18px;border-radius:18px;text-align:center;display:none}
+.rk-tune.on{display:block}.tn-note{font:700 64px Orbitron;line-height:1;color:var(--ink);display:inline-block}.tn-oct{display:inline-block;font:600 18px Orbitron;color:#8d8aa3;vertical-align:top;margin-left:4px}
+.rk-tune.ok .tn-note{color:var(--g);text-shadow:0 0 22px rgba(57,255,20,.6)}
+.tn-scale{position:relative;height:70px;margin:12px 0 6px;background:repeating-linear-gradient(90deg,transparent 0 9.5%,rgba(255,255,255,.18) 9.5% 10%);border-radius:8px;overflow:hidden}
+.tn-mid{position:absolute;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--g);opacity:.6}
+.tn-needle{position:absolute;left:50%;bottom:-40px;width:2px;height:100px;margin-left:-1px;background:linear-gradient(#ff3bd0,#9b4dff);transform-origin:50% 100%;transition:transform .12s;box-shadow:0 0 8px #ff3bd0}
+.rk-tune.ok .tn-needle{background:var(--g);box-shadow:0 0 10px var(--g)}
+.tn-row{display:flex;justify-content:space-between;align-items:center;font:600 12px SpaceGrotesk;color:var(--dim);margin-top:6px}
+.tn-mic{margin-top:12px;width:100%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
+@media (max-width:1180px){#rack{top:auto;bottom:calc(max(14px,env(safe-area-inset-bottom)) + 66px);right:50%;transform:translateX(50%);max-width:96vw;overflow-x:auto}.rk-list,.rk-tune{top:auto;bottom:calc(100% + 8px)}}
+body.clean #rack{display:none!important}
+body[data-shot="empty"] #rack{display:none}
 </style>
 </head>
 <body>
@@ -118,6 +151,7 @@ body[data-shot="cab"] #hint,body[data-shot="pedal"] #hint{display:none}
 <div id="hint"></div>
 <div id="tray" class="glass"></div>
 <nav id="dock" class="glass"></nav>
+<div id="rack" class="glass"></div>
 <div id="bubble"></div>
 <div id="toast" class="glass"></div>
 <div id="cat" role="dialog" aria-label="Catalogo"><div class="sheet glass"><h2 id="catTitle"></h2><p class="sub" id="catSub"></p><div id="catCards"></div></div></div>

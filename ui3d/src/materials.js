@@ -53,6 +53,8 @@ export function makeMaterials(renderer, manager) {
     EngraveDark: S({ color: 0x0a0a0a, roughness: 0.7 }),
     Engrave: S({ color: 0x080706, roughness: 0.75 }),
     Rubber: S({ color: 0x0b0b0b, roughness: 0.92 }),
+    BaseMetal: S({ color: 0x2a2a2e, metalness: 0.9, roughness: 0.5 }),
+    JackHole: S({ color: 0x020202, roughness: 0.9 }),
     BasketMetal: S({ color: 0x1c1c1e, metalness: 0.8, roughness: 0.55 }),
     Cone: S({ color: 0x2c251e, roughness: 0.95, normalMap: tex("tolex_nrm.jpg", false, 0.2), normalScale: new THREE.Vector2(0.15, 0.15) }),
     DustCap: S({ color: 0x0d0c0b, roughness: 0.55 }),
@@ -60,9 +62,10 @@ export function makeMaterials(renderer, manager) {
     HexMesh: S({ map: tex("hex.png", true, 0.018, 0.018 * Math.sqrt(3) / 3), color: 0xb0b2b8, metalness: 0.9, roughness: 0.45, alphaTest: 0.5, side: THREE.DoubleSide }),
     SilverCloth: S({ map: tex("silvercloth.png", true, 0.008), color: 0x8a8e96, normalMap: tex("cloth_nrm.png", false, 0.008), metalness: 0.5, roughness: 0.5, alphaTest: 0.5, side: THREE.DoubleSide }),
     Grille: S({ map: tex("brit_cloth.png", true, 0.008), normalMap: tex("cloth_nrm.png", false, 0.008), roughness: 0.9, alphaTest: 0.5, side: THREE.DoubleSide, color: 0xd8cbb8 }),
-    Glass: P({ color: 0xeefff2, roughness: 0.04, transmission: 1, thickness: 0.0005, ior: 1.5, envMapIntensity: 0.8, specularIntensity: 1 }),
+    Glass: P({ color: 0xf4fff7, roughness: 0.02, transmission: 1, thickness: 0.002, ior: 1.5, envMapIntensity: 1.6, specularIntensity: 1, clearcoat: 1, clearcoatRoughness: 0.02 }),
     Heater: S({ color: 0x113311, emissive: 0x5cff3a, emissiveIntensity: 6 }),
     TubePlate: S({ color: 0x2e3032, metalness: 1, roughness: 0.45, emissive: 0x1e6a10, emissiveIntensity: 0.2 }),
+    PlateSigil: S({ color: 0x18201a, metalness: 0.6, roughness: 0.45, emissive: 0x8fd46a, emissiveIntensity: 0.35 }),
     Getter: S({ color: 0x9a9aa0, metalness: 1, roughness: 0.05 }),
     WindowBack: S({ color: 0x050805, emissive: 0x1d5a10, emissiveIntensity: 0.12, roughness: 0.7 }),
     VentGlow: S({ color: 0x050308, emissive: 0x7a3cff, emissiveIntensity: 0.9, roughness: 0.8 }),
@@ -80,14 +83,19 @@ export function makeMaterials(renderer, manager) {
     TubeLightGreen: S({ color: 0x0a2a06, emissive: 0x46ff2a, emissiveIntensity: 5 }),
     TubeLightPurple: S({ color: 0x1a0a2a, emissive: 0xb050ff, emissiveIntensity: 5 }),
     WindowBackPurple: S({ color: 0x080510, emissive: 0x6a2ab0, emissiveIntensity: 0.3, roughness: 0.7 }),
-    AluBrushed: P({ color: 0xc9cbd0, metalness: 1, roughness: 0.75, roughnessMap: brushedR(0.25), normalMap: brushedN(0.25), normalScale: new THREE.Vector2(0.3, 0.3), anisotropy: 0.8, envMapIntensity: 1.3 }),
-    AluPanel: P({ color: 0xd5d7dc, metalness: 1, roughness: 0.7, roughnessMap: brushedR(0.15), normalMap: brushedN(0.15), normalScale: new THREE.Vector2(0.25, 0.25), anisotropy: 0.9, envMapIntensity: 1.4 }),
+    AluBrushed: P({ color: 0xe4e6ea, metalness: 1, roughness: 0.38, roughnessMap: brushedR(0.12), normalMap: brushedN(0.12), normalScale: new THREE.Vector2(0.25, 0.25), anisotropy: 0.9, envMapIntensity: 2.2 }),
+    AluPanel: P({ color: 0xeceef2, metalness: 1, roughness: 0.34, roughnessMap: brushedR(0.1), normalMap: brushedN(0.1), normalScale: new THREE.Vector2(0.2, 0.2), anisotropy: 0.9, envMapIntensity: 2.4 }),
+    AluVapor: P({ color: 0x9ea8b8, metalness: 0.9, roughness: 0.3, roughnessMap: brushedR(0.12), normalMap: brushedN(0.12), normalScale: new THREE.Vector2(0.25, 0.25), anisotropy: 0.9, envMapIntensity: 1.6 }),
     CornerPurple: P({ color: 0x5a2a9a, metalness: 0.9, roughness: 0.4, roughnessMap: grunge(0.1), clearcoat: 0.4, envMapIntensity: 1.3 }),
-    PurplePlate: P({ color: 0x6a3aa8, metalness: 0.9, roughness: 0.35, roughnessMap: brushedR(0.1), normalMap: brushedN(0.1), envMapIntensity: 1.4 }),
+    NukePaint: P({ color: 0x1c0d30, metalness: 0.35, roughness: 0.6, roughnessMap: grunge(0.12), clearcoat: 0.05, clearcoatRoughness: 0.5, envMapIntensity: 0.45 }),
+    BioPaint: P({ color: 0x6fb80a, metalness: 0.45, roughness: 0.38, roughnessMap: grunge(0.1), clearcoat: 0.5, clearcoatRoughness: 0.15, envMapIntensity: 0.8 }),
+    MutantPaint: P({ color: 0x2c0f5a, metalness: 0.4, roughness: 0.5, roughnessMap: grunge(0.12), clearcoat: 0.3, clearcoatRoughness: 0.3, envMapIntensity: 0.55 }),
+    MutantBlack: P({ color: 0x0c0c10, metalness: 0.4, roughness: 0.45, roughnessMap: grunge(0.1), clearcoat: 0.25, clearcoatRoughness: 0.3, envMapIntensity: 0.6 }),
+    PurplePlate: P({ color: 0x7a3fc4, metalness: 0.25, roughness: 0.42, roughnessMap: brushedR(0.1), normalMap: brushedN(0.1), envMapIntensity: 1.2 }),
     EngraveLight: S({ color: 0xe6dcff, roughness: 0.6 }),
     LedPurple: S({ color: 0x1a0a2a, emissive: 0xb050ff, emissiveIntensity: 4 }),
     JewelPurple: S({ color: 0x1a0a2a, emissive: 0xb050ff, emissiveIntensity: 4, roughness: 0.1 }),
-    Acrylic: P({ color: 0xe8dcff, roughness: 0.08, transmission: 0.85, thickness: 0.01, ior: 1.49, emissive: 0x8a40ff, emissiveIntensity: 0.6, envMapIntensity: 1.2 }),
+    Acrylic: P({ color: 0xd9c4ff, roughness: 0.06, transmission: 0.55, thickness: 0.01, ior: 1.49, emissive: 0x8a40ff, emissiveIntensity: 0.9, envMapIntensity: 1.8, clearcoat: 1, clearcoatRoughness: 0.04 }),
     AcrylicRing: P({ color: 0xd8c8ff, roughness: 0.15, transmission: 0.6, thickness: 0.004, emissive: 0x9b4dff, emissiveIntensity: 1.6 }),
     AcrylicCore: S({ color: 0x2a1040, emissive: 0xb050ff, emissiveIntensity: 2.5 }),
   });
@@ -120,6 +128,8 @@ export function makeMaterials(renderer, manager) {
   M.HexMeshDark = M.HexMesh.clone(); M.HexMeshDark.color = new THREE.Color(0x2a2b2f); M.HexMeshDark.roughness = 0.55;
   M.HexMeshPurple = M.HexMesh.clone(); M.HexMeshPurple.color = new THREE.Color(0x7a4ac0);
   M.Emblem = new THREE.MeshStandardMaterial({ map: emblemTexture("#c9a25a", "rgba(0,0,0,0)"), transparent: true, metalness: 1, roughness: 0.45, envMapIntensity: 1.5, polygonOffset: true, polygonOffsetFactor: -2 });
+  M.EmblemPlate = new THREE.MeshStandardMaterial({ map: emblemTexture("#e6e9ef", "rgba(0,0,0,0)"), transparent: true, metalness: 0.6, roughness: 0.3, envMapIntensity: 1.6, polygonOffset: true, polygonOffsetFactor: -2 });
+  M.EmblemDark = new THREE.MeshStandardMaterial({ map: emblemTexture("#10180a", "rgba(0,0,0,0)"), transparent: true, metalness: 0.2, roughness: 0.5, polygonOffset: true, polygonOffsetFactor: -2 });
   M.Glass.userData.glass = true;
   return { M, tex };
 }
