@@ -3,7 +3,13 @@
 #include "Presets.h"
 #include "ui/Skin.h"
 #if JUCE_WINDOWS && JUCE_WEB_BROWSER && JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING
+ #ifndef NOMINMAX
+  #define NOMINMAX
+ #endif
  #include <WebView2.h>
+ // windows.h (pulled in by WebView2.h) may define min/max as macros: they break std::max below.
+ #undef min
+ #undef max
 #endif
 
 namespace rig
