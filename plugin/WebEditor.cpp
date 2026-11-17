@@ -22,6 +22,7 @@ juce::File stageArchive()
    #endif
 }
 
+#if JUCE_WEB_BROWSER
 static juce::WebBrowserComponent::Options browserOptions()
 {
     return juce::WebBrowserComponent::Options {}
@@ -39,12 +40,20 @@ static juce::WebBrowserComponent::Options browserOptions()
 // the scene while the engine runs). Ignored unless the variable is set.
 static juce::String devStageUrl() { return juce::SystemStats::getEnvironmentVariable ("TOXICRIG_STAGE_URL", {}); }
 
+#endif
+
 bool canUseStageEditor()
 {
+   #if ! JUCE_WEB_BROWSER
+    return false;
+   #else
     if (ui::settings().getBoolValue ("classicUi", false)) return false;
     if (devStageUrl().isEmpty() && ! stageArchive().existsAsFile()) return false;
     return juce::WebBrowserComponent::areOptionsSupported (browserOptions());
+   #endif
 }
+
+#if JUCE_WEB_BROWSER
 
 static const char* mimeFor (const juce::String& path)
 {
@@ -309,4 +318,5 @@ void WebRigEditor::onMessage (const juce::var& msg)
         return;
     }
 }
+#endif // JUCE_WEB_BROWSER
 } // namespace rig

@@ -119,6 +119,7 @@ if(TZ_BUILD_TESTS)
         plugin/RigEngine.cpp
         plugin/PluginProcessor.cpp
         plugin/PluginEditor.cpp
+        plugin/WebEditor.cpp
         ${TZ_UI_SOURCES})
     target_include_directories(ToxicRigTests PRIVATE dsp plugin)
     target_compile_definitions(ToxicRigTests PRIVATE

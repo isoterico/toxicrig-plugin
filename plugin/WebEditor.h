@@ -14,6 +14,7 @@ juce::File stageArchive();
 // True if the 3D editor can open here: archive present, web view available, not disabled.
 bool canUseStageEditor();
 
+#if JUCE_WEB_BROWSER   // builds without the web view (the offline test runner) use the 2D editor only
 class WebRigEditor final : public juce::AudioProcessorEditor,
                            private juce::Timer,
                            private juce::AudioProcessorParameter::Listener
@@ -54,4 +55,5 @@ private:
     double lastTunerRate = 0;
     int tick = 0;
 };
+#endif
 } // namespace rig

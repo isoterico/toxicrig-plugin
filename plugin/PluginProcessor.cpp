@@ -181,7 +181,9 @@ void ToxicRigProcessor::recallAB (int slot)
 juce::AudioProcessorEditor* ToxicRigProcessor::createEditor()
 {
     // The 3D stage when its files are installed and the system web view works; otherwise the 2D editor.
+   #if JUCE_WEB_BROWSER
     if (rig::canUseStageEditor()) return new rig::WebRigEditor (*this);
+   #endif
     return new ToxicRigEditor (*this);
 }
 
