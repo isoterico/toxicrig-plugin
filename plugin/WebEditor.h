@@ -13,6 +13,8 @@ namespace rig
 juce::File stageArchive();
 // True if the 3D editor can open here: archive present, web view available, not disabled.
 bool canUseStageEditor();
+// Why the 3D stage is (not) used here, in plain words, for the settings menu of the 2D editor.
+juce::String stageStatus();
 
 #if JUCE_WEB_BROWSER   // builds without the web view (the offline test runner) use the 2D editor only
 class WebRigEditor final : public juce::AudioProcessorEditor,

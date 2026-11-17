@@ -108,7 +108,9 @@ void Header::showSettings()
     m.addSubMenu ("Stile grafico", skins);
     m.addSubMenu ("Dimensione finestra", sizes);
     m.addItem (300, "Rimetti i pedali nell'ordine iniziale");
-    if (rig::stageArchive().existsAsFile())
+    const auto stage = rig::stageStatus();
+    m.addItem (401, "Palco 3D: " + stage, false, false);
+    if (stage == "pronto" || stage.startsWith ("disattivato"))
         m.addItem (400, "Passa al palco 3D");
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (gear.get()), [this, scales] (int r)
     {

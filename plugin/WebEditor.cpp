@@ -2,6 +2,9 @@
 #include "Params.h"
 #include "Presets.h"
 #include "ui/Skin.h"
+#if JUCE_WINDOWS && JUCE_WEB_BROWSER && JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING
+ #include <WebView2.h>
+#endif
 
 namespace rig
 {
@@ -41,6 +44,30 @@ static juce::WebBrowserComponent::Options browserOptions()
 static juce::String devStageUrl() { return juce::SystemStats::getEnvironmentVariable ("TOXICRIG_STAGE_URL", {}); }
 
 #endif
+
+juce::String stageStatus()
+{
+    if (ui::settings().getBoolValue ("classicUi", false)) return "disattivato (scelta: interfaccia 2D)";
+   #if ! JUCE_WEB_BROWSER
+    return "non incluso in questa versione";
+   #else
+    if (devStageUrl().isEmpty() && ! stageArchive().existsAsFile())
+        return "file mancante: " + stageArchive().getFullPathName();
+    if (! juce::WebBrowserComponent::areOptionsSupported (browserOptions()))
+    {
+        juce::String why = "WebView2 non disponibile su questo PC";
+       #if JUCE_WINDOWS && JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING
+        // Which Edge WebView2 runtime Windows reports (or its error code), to tell a missing runtime apart.
+        LPWSTR ver = nullptr;
+        const HRESULT hr = GetAvailableCoreWebView2BrowserVersionString (nullptr, &ver);
+        if (SUCCEEDED (hr) && ver != nullptr) { why << " (runtime " << juce::String (ver) << ")"; CoTaskMemFree (ver); }
+        else why << " (runtime non trovato, codice 0x" << juce::String::toHexString ((int) hr) << ")";
+       #endif
+        return why;
+    }
+    return "pronto";
+   #endif
+}
 
 bool canUseStageEditor()
 {

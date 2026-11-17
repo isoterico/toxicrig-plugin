@@ -20,6 +20,15 @@ const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const canvas = $("#gl");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
+// Only the key light casts shadows and it never moves: the shadow map is redrawn only while something in
+// the scene moves (amp rising, pedals sliding, controls turning), not on every frame.
+renderer.shadowMap.autoUpdate = false;
+let shadowFrames = 30;
+const shadowsDirty = (n = 3) => { shadowFrames = Math.max(shadowFrames, n); };
+let lastInput = 0;
+addEventListener("pointerdown", () => { lastInput = performance.now(); shadowsDirty(); });
+addEventListener("pointermove", (e) => { lastInput = performance.now(); if (e.buttons) shadowsDirty(); });
+addEventListener("wheel", () => { lastInput = performance.now(); }, { passive: true });
 renderer.toneMapping = THREE.AgXToneMapping; renderer.toneMappingExposure = 1.15;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const scene = new THREE.Scene();
@@ -33,10 +42,12 @@ const PF = pedalFactory(renderer, M, tex);
 const MIC = micFactory(M, tex);
 
 // Quality: "Alta" = ambient occlusion + lens depth of field; "Media" for phones and slower PCs.
+let maxRatio = 1, curRatio = 1;   // adaptive resolution: curRatio drops when frames take too long
 let quality = (() => { try { return localStorage.getItem("tr.quality") || (MOBILE ? "media" : "alta"); } catch { return MOBILE ? "media" : "alta"; } })();
 function applyQuality() {
   const hi = quality === "alta";
-  renderer.setPixelRatio(Math.min(devicePixelRatio, hi ? 2 : 1.25));
+  maxRatio = Math.min(devicePixelRatio, hi ? 2 : 1.25); curRatio = maxRatio;
+  renderer.setPixelRatio(curRatio); shadowsDirty(5);
   // AO is baked per object; screen-space AO and lens blur are off: they cost sharpness.
   stage.gtao.enabled = false; stage.bokeh.enabled = false;
   stage.L.key.shadow.mapSize.set(hi ? 2048 : 1024, hi ? 2048 : 1024); if (stage.L.key.shadow.map) { stage.L.key.shadow.map.dispose(); stage.L.key.shadow.map = null; }
@@ -294,6 +305,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 const jackDir = (id, side) => (PEDAL[id].jack.top ? UP : side < 0 ? LEFT : RIGHT);
 let micCable = null;
 function rebuildCables() {
+  shadowsDirty(2);
   cables.children.slice().forEach((c) => { cables.remove(c); c.traverse((m) => m.geometry?.dispose()); });
   if (!boardGroup.visible || !amp) return;
   const pre = chain.pre, loop = chain.loop;
@@ -327,6 +339,7 @@ function rebuildCables() {
 const cabState = { on: true, type: 0, mic: "dyn", pos: 0.3, dist: 0.2, ir: null };
 const micRig = MIC.rig(); micRig.root.visible = false; scene.add(micRig.root);
 function placeMic() {
+  shadowsDirty(2);
   if (!amp) return;
   const spk = amp.speakers[0];
   const front = amp.cab.p.z;
@@ -491,6 +504,7 @@ canvas.addEventListener("wheel", (e) => {
 const micCm = () => Math.round(1 + cabState.dist * 29);
 
 function setCtl(c, v) {
+  shadowsDirty(2);
   changed();
   if (c.kind === "ampKnob") { ampVals[c.id] = v; applyAmpVals(amp); }
   else if (c.kind === "ampSlider") { ampVals[c.id] = Math.round((v * 24 - 12) * 2) / 2; applyAmpVals(amp); }
@@ -824,8 +838,17 @@ async function applyEngine(full, msg) {
     const prevModel = Math.round((eng.a_model ?? -1) * 4), prevOn = PEDALS.map((d) => eng[d.id + "_on"]).join();
     Object.assign(eng, msg.values || {});
     if (full) { engChain = msg.chain || ""; window.__rigRouting = msg.routing; }
-    const modelChanged = Math.round(eng.a_model * 4) !== prevModel, onChanged = PEDALS.map((d) => eng[d.id + "_on"]).join() !== prevOn;
-    if (full || modelChanged || (onChanged && !engChain)) await applyRig(rigFromEngine(engChain, window.__rigRouting));
+    const modelChanged = Math.round(eng.a_model * 4) !== prevModel;
+    // A pedal switched on from outside (automation, 2D editor, MIDI) that is not on the 3D board yet is
+    // added to it; switching one off never removes it from the board.
+    const onBoard = new Set([...chain.pre, ...chain.loop]), r = window.__rigRouting || { board: [], loop: [] };
+    const arriving = PEDALS.filter((d) => msg.values[d.id + "_on"] >= 0.5 && !onBoard.has(d.id)).map((d) => d.id);
+    if (!full && arriving.length) {
+      const ch = { pre: [...chain.pre], loop: [...chain.loop] };
+      for (const id of arriving) (r.loop.includes(id) ? ch.loop : ch.pre).push(id);
+      engChain = JSON.stringify(ch);
+    }
+    if (full || modelChanged || arriving.length) await applyRig(rigFromEngine(engChain, window.__rigRouting));
     else {   // automation of single controls: move them in place, no relayout
       for (const k of AMP_KEYS) if (msg.values["a_" + k] != null) ampVals[k] = ampReal(k, eng["a_" + k]);
       if (amp) applyAmpVals(amp);
@@ -841,6 +864,10 @@ async function applyEngine(full, msg) {
     levelsFromEngine();
     if (full) rack.sync({ presets: msg.presets, preset: msg.preset, ab: msg.ab });
     lastSent = sceneParams(); lastRoute = routeKey();
+    // No board saved with the project yet (new instance, preset, old session): save the one now shown,
+    // so later changes keep exactly these pedals in this order.
+    if (!engChain || arriving.length) { engChain = lastRoute; lastRoute = ""; }
+    shadowsDirty(3);
   } finally { applying = false; }
 }
 const routeKey = () => JSON.stringify(chain);
@@ -913,8 +940,23 @@ function resize() {
 }
 addEventListener("resize", resize);
 
+let frameNo = 0, lastFrame = 0, frameMs = 16.7, lastAdapt = 0;
 function frame(now) {
   requestAnimationFrame(frame);
+  if (document.hidden) return;                       // plugin window hidden or minimised: draw nothing
+  const busy = rise || anims.length || shotAnim || now - lastInput < 1500;
+  // In the plugin, a still scene is drawn at 30 fps: the DAW and the audio get the time back.
+  if (window.__bridge?.PLUGIN && !busy && (++frameNo & 1)) return;
+  const dt = lastFrame ? now - lastFrame : 16.7; lastFrame = now;
+  if (dt < 250) frameMs += (dt / (busy || !window.__bridge?.PLUGIN ? 1 : 2) - frameMs) * 0.05;
+  // Adaptive resolution: frames slower than ~42 fps lower the pixel ratio a step; fast frames raise it back.
+  if (now - lastAdapt > 1500) {
+    lastAdapt = now;
+    const next = frameMs > 24 ? Math.max(0.6, curRatio - 0.15) : frameMs < 14 ? Math.min(maxRatio, curRatio + 0.1) : curRatio;
+    if (Math.abs(next - curRatio) > 0.01) { curRatio = next; renderer.setPixelRatio(curRatio); resize(); }
+  }
+  if (rise || anims.length) shadowsDirty(1);
+  if (shadowFrames > 0) { renderer.shadowMap.needsUpdate = true; shadowFrames--; }
   const t = now / 1000;
   if (rise) {
     const k = Math.min(1, (now - rise.t0) / rise.dur);
