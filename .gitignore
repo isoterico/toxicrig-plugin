@@ -3,3 +3,5 @@ test-out/
 .DS_Store
 *.user
 test-final/
+test-out*/
+test-v03/

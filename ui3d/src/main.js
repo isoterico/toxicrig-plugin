@@ -720,6 +720,8 @@ function openCab() {
   tray.classList.add("on");
   tray.querySelectorAll(".micbtn").forEach((b) => b.addEventListener("click", () => { cabState.mic = b.dataset.v; placeMic(); rebuildCables(); refreshCabPanel(); }));
   tray.querySelector('[data-k="type"]').addEventListener("change", (e) => { cabState.type = +e.target.value; refreshCabPanel(); });
+  // In the plugin the engine loads the IR from disk, so the system file dialog is opened natively.
+  tray.querySelector('[data-k="ir"]').addEventListener("click", (e) => { if (PLUGIN) { e.preventDefault(); JB.emitEvent("rig", { type: "pickIR" }); } });
   tray.querySelector('[data-k="ir"]').addEventListener("change", (e) => { const f = e.target.files[0]; if (f) { cabState.ir = f.name; cabState.type = 3; refreshCabPanel(); say("IR caricato: " + f.name); } });
   tray.querySelector('[data-k="on"]').addEventListener("click", () => { cabState.on = !cabState.on; refreshCabPanel(); });
   refreshCabPanel();
@@ -765,6 +767,104 @@ async function applyRig(r) {
 }
 const rack = buildRack($("#rack"), { snapshot: snapshotRig, applyRig, say });
 const changed = () => rack.markDirty();
+
+// ------------------------------------------------------------------ plugin bridge
+// Inside the plugin (JUCE web view) the audio engine is the source of truth. The scene sends the
+// parameter values it wants (normalised 0..1, same ids as the plugin) and redraws what the engine
+// reports: host automation, presets, A/B and the 2D editor all move the 3D controls too.
+const JB = window.__JUCE__?.backend || null;
+const PLUGIN = !!JB;
+const AMP_KEYS = Object.keys(ampVals);
+const ampNorm = (k, v) => k.startsWith("eq") ? (v + 12) / 24 : k === "channel" ? v / 2 : v;
+const ampReal = (k, n) => k.startsWith("eq") ? n * 24 - 12 : k === "channel" ? Math.round(n * 2) : (k === "bright" || k === "tight" || k === "standby" || k === "power") ? (n >= 0.5 ? 1 : 0) : n;
+const LEVELS = { in_gain: { min: -24, max: 24, centre: 0 }, out_vol: { min: -48, max: 12, centre: 0 } };   // as in Params.cpp
+function sceneParams() {
+  const v = {};
+  if (amp) { v.a_model = amp.def.model / 4; for (const k of AMP_KEYS) v["a_" + k] = ampNorm(k, ampVals[k]); }
+  v.a_cab_on = cabState.on ? 1 : 0; v.a_cab = cabState.type / 3; v.a_mic = MICS.findIndex((m) => m.id === cabState.mic) / 2;
+  v.a_mic_pos = cabState.pos; v.a_mic_dist = cabState.dist;
+  const onBoard = new Set([...chain.pre, ...chain.loop]);
+  for (const d of PEDALS) {
+    const st = PEDAL[d.id];
+    v[d.id + "_on"] = onBoard.has(d.id) && st?.on ? 1 : 0;
+    if (st && onBoard.has(d.id)) for (const q of d.params) v[d.id + "_" + q.id] = st.values[q.id];
+  }
+  const L = rack.levels();
+  for (const k of ["in_gain", "out_vol"]) v[k] = toNorm(LEVELS[k], L[k === "in_gain" ? "in" : "out"]);
+  return v;
+}
+const eng = {};            // last values known to be in the engine
+let engChain = "", bridgeLive = false, applying = false;
+function rigFromEngine(chainJson, routing) {
+  let ch = null;
+  try { ch = chainJson ? JSON.parse(chainJson) : null; } catch (e) { ch = null; }
+  if (!ch) {   // no 3D board saved (preset, old session, 2D editor): show the pedals that are on, in signal order
+    const on = (id) => (eng[id + "_on"] ?? 0) >= 0.5;
+    ch = { pre: (routing?.board || []).filter(on), loop: (routing?.loop || []).filter(on) };
+  }
+  const pedals = {};
+  for (const id of [...ch.pre, ...ch.loop]) {
+    const d = PEDALS.find((x) => x.id === id); if (!d) continue;
+    const values = {}; for (const q of d.params) values[q.id] = eng[id + "_" + q.id] ?? toNorm(q, q.def);
+    pedals[id] = { on: (eng[id + "_on"] ?? 0) >= 0.5, values };
+  }
+  const av = {}; for (const k of AMP_KEYS) if (eng["a_" + k] != null) av[k] = ampReal(k, eng["a_" + k]);
+  const model = Math.round((eng.a_model ?? 0) * 4);
+  return { amp: (AMPS.find((a) => a.model === model) || AMPS[0]).id, ampVals: av, chain: ch, pedals, cab: cabFromEngine() };
+}
+const cabFromEngine = () => ({ on: (eng.a_cab_on ?? 1) >= 0.5, type: Math.round((eng.a_cab ?? 0) * 3), mic: MICS[Math.round((eng.a_mic ?? 0) * 2)].id, pos: eng.a_mic_pos ?? 0.3, dist: eng.a_mic_dist ?? 0.2 });
+function levelsFromEngine() {
+  const r = (k) => eng[k] == null ? 0 : Math.round(toValue(LEVELS[k], eng[k]) * 2) / 2;
+  rack.setLevels({ in: r("in_gain"), out: r("out_vol") });
+}
+let lastSent = {}, lastRoute = "";
+async function applyEngine(full, msg) {
+  applying = true;
+  try {
+    const prevModel = Math.round((eng.a_model ?? -1) * 4), prevOn = PEDALS.map((d) => eng[d.id + "_on"]).join();
+    Object.assign(eng, msg.values || {});
+    if (full) { engChain = msg.chain || ""; window.__rigRouting = msg.routing; }
+    const modelChanged = Math.round(eng.a_model * 4) !== prevModel, onChanged = PEDALS.map((d) => eng[d.id + "_on"]).join() !== prevOn;
+    if (full || modelChanged || (onChanged && !engChain)) await applyRig(rigFromEngine(engChain, window.__rigRouting));
+    else {   // automation of single controls: move them in place, no relayout
+      for (const k of AMP_KEYS) if (msg.values["a_" + k] != null) ampVals[k] = ampReal(k, eng["a_" + k]);
+      if (amp) applyAmpVals(amp);
+      for (const id of [...chain.pre, ...chain.loop]) {
+        const st = PEDAL[id], d = st.def; let touched = false;
+        if (msg.values[id + "_on"] != null) { st.on = eng[id + "_on"] >= 0.5; touched = true; }
+        for (const q of d.params) if (msg.values[id + "_" + q.id] != null) { st.values[q.id] = eng[id + "_" + q.id]; touched = true; }
+        if (touched) PF.apply(st);
+      }
+      if (["a_cab_on", "a_cab", "a_mic", "a_mic_pos", "a_mic_dist"].some((k) => msg.values[k] != null)) { Object.assign(cabState, cabFromEngine()); placeMic(); }
+      refreshHud?.();
+    }
+    levelsFromEngine();
+    if (full) rack.sync({ presets: msg.presets, preset: msg.preset, ab: msg.ab });
+    lastSent = sceneParams(); lastRoute = routeKey();
+  } finally { applying = false; }
+}
+const routeKey = () => JSON.stringify(chain);
+function bridgeTick() {
+  if (!bridgeLive || applying) return;
+  const v = sceneParams(), out = {}; let n = 0;
+  for (const k in v) if (Math.abs((lastSent[k] ?? -1) - v[k]) > 1e-4) { out[k] = v[k]; lastSent[k] = v[k]; n++; }
+  if (n) JB.emitEvent("rig", { type: "params", values: out });
+  const rk = routeKey();
+  if (rk !== lastRoute) { lastRoute = rk; JB.emitEvent("rig", { type: "routing", board: chain.pre, loop: chain.loop, chain: rk }); }
+}
+if (PLUGIN) {
+  rack.remote({ load: (i) => JB.emitEvent("rig", { type: "preset", index: i }), save: (name) => JB.emitEvent("rig", { type: "savePreset", name }),
+    ab: (s) => JB.emitEvent("rig", { type: "ab", slot: s === "B" ? 1 : 0 }), copy: () => JB.emitEvent("rig", { type: "abCopy" }) });
+  JB.addEventListener("engine", (m) => {
+    if (m.type === "meters") { rack.meters({ in: m.in, out: m.out }); if (m.hz != null) rack.pitch(m.hz); return; }
+    if (m.type === "state") { const first = !bridgeLive; rack.run(() => applyEngine(true, m)).then(() => { bridgeLive = true; if (first) setHint("wide"); }); return; }
+    if (m.type === "params") rack.run(() => applyEngine(false, m));
+  });
+  setInterval(bridgeTick, 40);
+  const cb = $("#classic"); cb.hidden = false;
+  cb.addEventListener("click", () => { JB.emitEvent("rig", { type: "classicUi" }); say("Chiudi e riapri la finestra di ToxicRig: si aprirà l'interfaccia 2D."); });
+}
+window.__bridge = { PLUGIN, eng, sceneParams };
 
 // Dock: the four places of the stage, always one tap away.
 function buildDock() {
@@ -870,6 +970,7 @@ manager.onLoad = async () => {
   // Load the other two amps in the background so the catalogue opens instantly.
   for (const a of AMPS) if (!AMP[a.id]) loadAmp(a, new THREE.LoadingManager()).then((x) => { thumbs[a.id] = ampThumb(x); }).catch(() => {});
   const auto = location.hash.match(/#auto(?:=(\w+))?/); if (auto) placeAmp(auto[1] || "british30");
+  if (PLUGIN) JB.emitEvent("rig", { type: "ready" });   // the engine answers with the full state, the amp walks on stage
   if (/[?&]clean/.test(location.search)) document.body.classList.add("clean");
 };
 loadAmp(AMPS[0], manager);

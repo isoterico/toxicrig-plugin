@@ -13,6 +13,7 @@
         <line choice="vst3"/>
         <line choice="au"/>
         <line choice="app"/>
+        <line choice="stage"/>
     </choices-outline>
     <choice id="vst3" title="Plugin VST3" description="Per Ableton, Reaper, Cubase, Studio One, FL Studio...">
         <pkg-ref id="it.toxiczone.toxicrig.vst3"/>
@@ -23,7 +24,11 @@
     <choice id="app" title="Applicazione standalone" description="Per suonare senza DAW.">
         <pkg-ref id="it.toxiczone.toxicrig.app"/>
     </choice>
+    <choice id="stage" title="Palco 3D" description="L'interfaccia 3D del plugin (ampli, pedali, palco). Senza, ToxicRig usa l'interfaccia 2D." enabled="false">
+        <pkg-ref id="it.toxiczone.toxicrig.stage"/>
+    </choice>
     <pkg-ref id="it.toxiczone.toxicrig.vst3">vst3.pkg</pkg-ref>
+    <pkg-ref id="it.toxiczone.toxicrig.stage">stage.pkg</pkg-ref>
     <pkg-ref id="it.toxiczone.toxicrig.au">au.pkg</pkg-ref>
     <pkg-ref id="it.toxiczone.toxicrig.app">app.pkg</pkg-ref>
 </installer-gui-script>

@@ -50,6 +50,7 @@ Name: "custom"; Description: "Personalizzata"; Flags: iscustom
 [Components]
 Name: "vst3"; Description: "Plugin VST3 (FL Studio, Ableton, Reaper, Cubase, Studio One...)"; Types: full custom; Flags: fixed
 Name: "standalone"; Description: "Applicazione standalone (suonare senza DAW)"; Types: full
+Name: "stage"; Description: "Palco 3D (interfaccia 3D del plugin)"; Types: full custom; Flags: fixed
 
 [Tasks]
 Name: "desktopicon"; Description: "Crea un'icona sul desktop per la versione standalone"; Components: standalone; Flags: unchecked
@@ -59,6 +60,8 @@ Name: "desktopicon"; Description: "Crea un'icona sul desktop per la versione sta
 ; quella dove FL Studio e tutte le DAW cercano i plugin.
 Source: "{#SourceDir}\ToxicRig.vst3\*"; DestDir: "{commoncf64}\VST3\ToxicRig.vst3"; Components: vst3; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceDir}\ToxicRig.exe"; DestDir: "{app}"; Components: standalone; Flags: ignoreversion
+; Il palco 3D: un solo archivio in ProgramData, dove il plugin lo cerca (vedi plugin/WebEditor.cpp).
+Source: "{#SourceDir}\ToxicRig-Stage.zip"; DestDir: "{commonappdata}\ToxicZone\ToxicRig"; Components: stage; Flags: ignoreversion
 Source: "ToxicRig.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "LEGGIMI.txt"; DestDir: "{app}"; Flags: ignoreversion isreadme
 
@@ -73,6 +76,8 @@ Filename: "{app}\ToxicRig.exe"; Description: "Avvia ToxicRig standalone"; Compon
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{commoncf64}\VST3\ToxicRig.vst3"
+Type: files; Name: "{commonappdata}\ToxicZone\ToxicRig\ToxicRig-Stage.zip"
+Type: dirifempty; Name: "{commonappdata}\ToxicZone\ToxicRig"
 
 [Messages]
 italian.FinishedLabel=ToxicRig e' installato.%n%nIn FL Studio: Options > Manage plugins > Find more plugins, poi cerca "ToxicRig" e mettilo tra i preferiti (stellina).

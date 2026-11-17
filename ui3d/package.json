@@ -1,0 +1,15 @@
+{
+  "name": "toxicrig-stage",
+  "private": true,
+  "description": "ToxicRig 3D stage (three.js), bundled into ToxicRig-Stage.zip for the plugin",
+  "scripts": {
+    "build": "esbuild src/main.js --bundle --minify --outfile=public/app.js --format=iife"
+  },
+  "dependencies": {
+    "three": "0.187.0",
+    "@pmndrs/assets": "1.7.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

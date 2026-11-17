@@ -73,7 +73,9 @@ juce_add_plugin(ToxicRig
     VST3_CATEGORIES Fx Distortion
     AU_MAIN_TYPE kAudioUnitType_Effect
     MICROPHONE_PERMISSION_ENABLED TRUE
-    MICROPHONE_PERMISSION_TEXT "ToxicRig needs the audio input to process your guitar.")
+    MICROPHONE_PERMISSION_TEXT "ToxicRig needs the audio input to process your guitar."
+    NEEDS_WEB_BROWSER TRUE
+    NEEDS_WEBVIEW2 TRUE)
 
 target_sources(ToxicRig PRIVATE
     plugin/Params.cpp
@@ -81,12 +83,16 @@ target_sources(ToxicRig PRIVATE
     plugin/RigEngine.cpp
     plugin/PluginProcessor.cpp
     plugin/PluginEditor.cpp
+    plugin/WebEditor.cpp
     ${TZ_UI_SOURCES})
 
 target_include_directories(ToxicRig PRIVATE dsp plugin)
 
+# The 3D stage runs in the system web view (WebView2 linked statically on Windows, so
+# users don't need the WebView2 SDK; the Evergreen runtime ships with Windows 10/11).
 target_compile_definitions(ToxicRig PUBLIC
-    JUCE_WEB_BROWSER=0
+    JUCE_WEB_BROWSER=1
+    JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0)

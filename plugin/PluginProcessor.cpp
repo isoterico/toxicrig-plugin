@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "WebEditor.h"
 
 ToxicRigProcessor::ToxicRigProcessor()
     : AudioProcessor (BusesProperties()
@@ -177,6 +178,11 @@ void ToxicRigProcessor::recallAB (int slot)
         abState[(size_t) slot] = captureState(); // first visit: B starts as a copy of A
 }
 
-juce::AudioProcessorEditor* ToxicRigProcessor::createEditor() { return new ToxicRigEditor (*this); }
+juce::AudioProcessorEditor* ToxicRigProcessor::createEditor()
+{
+    // The 3D stage when its files are installed and the system web view works; otherwise the 2D editor.
+    if (rig::canUseStageEditor()) return new rig::WebRigEditor (*this);
+    return new ToxicRigEditor (*this);
+}
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new ToxicRigProcessor(); }

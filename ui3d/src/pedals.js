@@ -52,10 +52,13 @@ export const PEDALS = [
 ];
 
 // Same maths as juce::NormalisableRange with a skew centre.
+// Same rule as plugin/Params.cpp: the scale is skewed whenever the centre lies strictly inside the
+// range (e.g. Level -24..+12 dB puts 0 dB at half travel), so normalised values match the engine's.
+const skewed = (par) => !par.isBool && !par.choices && par.centre > par.min && par.centre < par.max;
 export function toValue(par, n) {
   if (par.isBool) return n >= 0.5 ? 1 : 0;
   if (par.choices) return Math.round(n * (par.choices.length - 1));
-  if (par.centre > 0) {
+  if (skewed(par)) {
     const skew = Math.log(0.5) / Math.log((par.centre - par.min) / (par.max - par.min));
     return par.min + (par.max - par.min) * Math.exp(Math.log(Math.max(n, 1e-6)) / skew);
   }
@@ -65,7 +68,7 @@ export function toNorm(par, v) {
   if (par.isBool) return v ? 1 : 0;
   if (par.choices) return v / (par.choices.length - 1);
   const t = (v - par.min) / (par.max - par.min);
-  if (par.centre > 0) {
+  if (skewed(par)) {
     const skew = Math.log(0.5) / Math.log((par.centre - par.min) / (par.max - par.min));
     return Math.pow(t, skew);
   }

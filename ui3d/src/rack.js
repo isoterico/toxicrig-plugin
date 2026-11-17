@@ -24,7 +24,7 @@ export function buildRack(el, api) {
     set(v) { mem = v; try { localStorage.setItem("toxicrig.presets", JSON.stringify(v)); } catch (e) { /* preview without storage */ } },
   };
   let mem = [];
-  const all = () => [...FACTORY.map((p) => ({ ...p, factory: true })), ...store.get()];
+  const all = () => remote ? remoteList : [...FACTORY.map((p) => ({ ...p, factory: true })), ...store.get()];
   let idx = -1, dirty = false;
   // Rig changes run one at a time: an amp swap is animated, and a second change arriving meanwhile
   // must start from the finished rig, not from a half-loaded one.
@@ -33,6 +33,8 @@ export function buildRack(el, api) {
   const slots = { A: null, B: null }; let active = "A";
   const lvl = { in: 0, out: 0 };   // dB
   const painters = {};
+  // In the plugin the engine owns presets and A/B: the rack shows its list and asks it to switch.
+  let remote = null, remoteList = [];
 
   el.innerHTML = `
     <div class="rk-lvl" data-k="in"><span class="rk-l">IN</span><div class="rk-knob" title="Livello di ingresso (trascina, doppio clic = 0 dB)"><i></i></div><div class="rk-meter"><b></b><b></b></div><span class="rk-v">0.0</span></div>
@@ -84,40 +86,48 @@ export function buildRack(el, api) {
   }
   async function load(i) {
     const list = all(); idx = (i + list.length) % list.length; const p = list[idx];
+    if (remote) { dirty = false; paintName(); remote.load(idx); api.say("Preset: " + p.name); return; }
     await api.applyRig(p); dirty = false; paintName(); send("preset", { name: p.name, rig: api.snapshot() }); api.say("Preset: " + p.name);
   }
   el.querySelectorAll(".rk-ar").forEach((b) => b.addEventListener("click", () => run(() => load(idx + +b.dataset.d))));
   $(".rk-name").addEventListener("click", () => {
     const L = $(".rk-list"), list = all();
-    L.innerHTML = list.map((p, i) => `<div class="rk-it${i === idx ? " on" : ""}" data-i="${i}"><span>${p.name}</span><small>${p.factory ? "fabbrica" : "utente"}</small>${p.factory ? "" : `<button data-del="${i}" title="Elimina">×</button>`}</div>`).join("");
+    L.innerHTML = list.map((p, i) => `<div class="rk-it${i === idx ? " on" : ""}" data-i="${i}"><span>${p.name}</span><small>${p.factory ? "fabbrica" : "utente"}</small>${p.factory || remote ? "" : `<button data-del="${i}" title="Elimina">×</button>`}</div>`).join("");
     L.classList.toggle("on");
     L.querySelectorAll(".rk-it").forEach((it) => it.addEventListener("click", (e) => {
-      if (e.target.dataset.del) { const u = store.get(); u.splice(+e.target.dataset.del - FACTORY.length, 1); store.set(u); if (idx >= FACTORY.length) idx = -1; paintName(); L.classList.remove("on"); return; }
+      if (e.target.dataset.del && !remote) { const u = store.get(); u.splice(+e.target.dataset.del - FACTORY.length, 1); store.set(u); if (idx >= FACTORY.length) idx = -1; paintName(); L.classList.remove("on"); return; }
       L.classList.remove("on"); run(() => load(+it.dataset.i));
     }));
   });
   $(".rk-save").addEventListener("click", () => {
-    const cur = all()[idx];
-    const name = (prompt("Nome del preset", cur && !cur.factory ? cur.name : "Il mio rig") || "").trim();
+    const L = $(".rk-list"), cur = all()[idx];
+    L.innerHTML = `<form class="rk-form"><label>Nome del preset</label><input maxlength="40" value="${cur && !cur.factory ? cur.name.replace(/ \*$/, "") : "Il mio rig"}"><button>Salva</button></form>`;
+    L.classList.add("on"); const inp = L.querySelector("input"); inp.focus(); inp.select();
+    L.querySelector("form").addEventListener("submit", (e) => { e.preventDefault(); L.classList.remove("on"); savePreset(inp.value.trim()); });
+  });
+  function savePreset(name) {
     if (!name) return;
+    if (remote) { remote.save(name); dirty = false; api.say("Salvato: " + name); return; }
     const u = store.get(), snap = { name, ...api.snapshot() }, at = u.findIndex((p) => p.name === name);
     if (at >= 0) u[at] = snap; else u.push(snap);
     store.set(u); idx = FACTORY.length + (at >= 0 ? at : u.length - 1); dirty = false; paintName(); send("presetSaved", snap); api.say("Salvato: " + name);
-  });
+  }
 
   // ---------- A/B: two complete rigs, switch instantly
   async function setSlot(s) {
     if (s === active) return;
+    if (remote) { active = s; paintAB(); remote.ab(s); api.say("Rig " + s); return; }
     slots[active] = { ...api.snapshot(), idx, dirty };
     active = s;
     if (!slots[s]) slots[s] = { ...api.snapshot(), idx, dirty };
     else { await api.applyRig(slots[s]); idx = slots[s].idx; dirty = slots[s].dirty; paintName(); }
-    el.querySelectorAll(".rk-ab [data-s]").forEach((b) => b.classList.toggle("on", b.dataset.s === s));
-    send("ab", { slot: s }); api.say("Rig " + s);
+    paintAB(); send("ab", { slot: s }); api.say("Rig " + s);
   }
   el.querySelectorAll(".rk-ab [data-s]").forEach((b) => b.addEventListener("click", () => run(() => setSlot(b.dataset.s))));
+  function paintAB() { el.querySelectorAll(".rk-ab [data-s]").forEach((b) => b.classList.toggle("on", b.dataset.s === active)); }
   $(".rk-copy").addEventListener("click", () => run(() => {
-    const other = active === "A" ? "B" : "A"; slots[other] = { ...api.snapshot(), idx, dirty };
+    const other = active === "A" ? "B" : "A";
+    if (remote) { remote.copy(); api.say(`Rig ${active} copiato in ${other}`); return; } slots[other] = { ...api.snapshot(), idx, dirty };
     send("abCopy", { from: active, to: other }); api.say(`Rig ${active} copiato in ${other}`);
   }));
 
@@ -154,7 +164,12 @@ export function buildRack(el, api) {
 
   paintName();
   return {
-    meters, pitch, idle: () => queue, markDirty() { if (!dirty) { dirty = true; paintName(); } },
+    meters, pitch, idle: () => queue, run,
+    // Plugin mode: r = { load(i), save(name), ab("A"|"B"), copy() }. sync() gets the engine's list and state.
+    remote(r) { remote = r; $(".tn-mic").style.display = "none"; },
+    sync({ presets, preset, ab }) { if (presets) remoteList = presets.map((n) => ({ name: n.replace(/ \*$/, ""), factory: !/ \*$/.test(n) }));
+      if (preset != null) idx = preset; if (ab != null) { active = ab ? "B" : "A"; paintAB(); } dirty = false; paintName(); },
+    markDirty() { if (!dirty) { dirty = true; paintName(); } },
     setLevels(v) { Object.assign(lvl, v); painters.in(); painters.out(); },
     levels: () => ({ ...lvl }),
   };

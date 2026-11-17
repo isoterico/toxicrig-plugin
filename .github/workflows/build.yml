@@ -31,8 +31,26 @@ jobs:
           echo "TR_VERSION=$v" >> "$GITHUB_ENV"
           echo "Version $v"
 
+      # WebView2 SDK (Windows): the 3D editor links its loader statically, so users only need the
+      # Edge WebView2 runtime that ships with Windows 10/11.
+      - name: WebView2 SDK (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: nuget install Microsoft.Web.WebView2 -Version 1.0.1901.177 -OutputDirectory "$env:RUNNER_TEMP\webview2"
+
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        shell: bash
+        run: |
+          extra=""
+          [ "$RUNNER_OS" == "Windows" ] && extra="-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$RUNNER_TEMP/webview2"
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release $extra
+
+      # The 3D stage (three.js) is built from ui3d/ and packed into one archive the plugin reads.
+      - name: Build 3D stage
+        shell: bash
+        run: |
+          cd ui3d && npm ci --no-audit --no-fund && npm run build
+          cd public && cmake -E tar cf "$GITHUB_WORKSPACE/ToxicRig-Stage.zip" --format=zip index.html app.js fonts tex models
 
       - name: Build plugin
         run: cmake --build build --config Release --target ToxicRig_VST3 ToxicRig_Standalone --parallel 4
@@ -54,6 +72,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
+          cp ToxicRig-Stage.zip dist/
           vst3=$(find build -type d -name "ToxicRig.vst3" -path "*Release*" | head -1)
           cp -R "$vst3" dist/
           if [ "$RUNNER_OS" == "macOS" ]; then
@@ -80,6 +99,9 @@ jobs:
           pkgbuild --component dist/ToxicRig.vst3 --install-location "/Library/Audio/Plug-Ins/VST3" --identifier it.toxiczone.toxicrig.vst3 --version "$TR_VERSION" pkgs/vst3.pkg
           pkgbuild --component dist/ToxicRig.component --install-location "/Library/Audio/Plug-Ins/Components" --identifier it.toxiczone.toxicrig.au --version "$TR_VERSION" pkgs/au.pkg
           pkgbuild --component dist/ToxicRig.app --install-location "/Applications" --identifier it.toxiczone.toxicrig.app --version "$TR_VERSION" pkgs/app.pkg
+          mkdir -p "stage-root/Library/Application Support/ToxicZone/ToxicRig"
+          cp dist/ToxicRig-Stage.zip "stage-root/Library/Application Support/ToxicZone/ToxicRig/"
+          pkgbuild --root stage-root --install-location / --identifier it.toxiczone.toxicrig.stage --version "$TR_VERSION" pkgs/stage.pkg
           productbuild --distribution installer/mac/distribution.xml --resources installer/mac/resources --package-path pkgs "dist-installer/ToxicRig-Installer-$TR_VERSION.pkg"
 
       - name: Validate with pluginval

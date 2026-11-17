@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "WebEditor.h"
 
 namespace ui
 {
@@ -107,11 +108,19 @@ void Header::showSettings()
     m.addSubMenu ("Stile grafico", skins);
     m.addSubMenu ("Dimensione finestra", sizes);
     m.addItem (300, "Rimetti i pedali nell'ordine iniziale");
+    if (rig::stageArchive().existsAsFile())
+        m.addItem (400, "Passa al palco 3D");
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (gear.get()), [this, scales] (int r)
     {
         if (r >= 100 && r < 103 && onSkin) onSkin (r - 100);
         else if (r >= 200 && r < 207 && onScale) onScale (scales[r - 200]);
         else if (r == 300) proc.setRouting (rig::Routing::defaults());
+        else if (r == 400)
+        {
+            settings().setValue ("classicUi", false);
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Palco 3D",
+                "Chiudi e riapri la finestra di ToxicRig: si aprira' il palco 3D.");
+        }
     });
 }
 
