@@ -218,6 +218,48 @@ int main (int argc, char** argv)
         }
     }
 
+    // ------------------------------------------------------------------ 1a. self-noise
+    // With the input completely silent, every preset (and every amp with all its pedals on) must be silent
+    // too: the plugin itself adds no hiss or hum. What you hear with the guitar plugged in comes from the
+    // guitar and the interface, amplified by the amp's gain.
+    log ("\n[1a] Silent input -> silent output (every preset, every amp with all pedals on), 48 kHz");
+    {
+        const std::vector<float> silence ((size_t) (48000 * 12), 0.0f);
+        auto silentTail = [&] (ToxicRigProcessor& p, const juce::String& name)
+        {
+            prepare (p, 48000.0, 256);
+            auto r = run (p, silence, 256);
+            float peak = 0.0f;   // last second only: reverb/delay tails of the start-up have died out
+            for (int ch = 0; ch < r.audio.getNumChannels(); ++ch)
+                for (int i = r.audio.getNumSamples() - 48000; i < r.audio.getNumSamples(); ++i)
+                    peak = std::max (peak, std::abs (r.audio.getSample (ch, i)));
+            juce::String perSec;
+            for (int sec = 0; sec < r.audio.getNumSamples() / 48000; sec += 2)
+            {
+                float pk = 0.0f;
+                for (int i = sec * 48000; i < (sec + 1) * 48000; ++i) pk = std::max (pk, std::abs (r.audio.getSample (0, i)));
+                perSec << " " << juce::String (juce::Decibels::gainToDecibels (pk, -120.0f), 0);
+            }
+            log ("  " + name.paddedRight (' ', 22) + " peak " + db (peak) + "   every 2 s:" + perSec);
+            check (peak < 1.0e-5f, name + ": noise with silent input");   // -100 dBFS
+        };
+        for (int pi = 0; pi < (int) rig::factoryPresets().size(); ++pi)
+        {
+            ToxicRigProcessor p;
+            p.applyFactoryPreset (pi);
+            silentTail (p, rig::factoryPresets()[(size_t) pi].name);
+        }
+        for (int model = 0; model < 5; ++model)
+        {
+            ToxicRigProcessor p;
+            p.apvts.getParameter ("a_model")->setValueNotifyingHost ((float) model / 4.0f);
+            p.apvts.getParameter ("a_gain")->setValueNotifyingHost (1.0f);
+            for (const auto& spec : rig::pedalSpecs())
+                p.apvts.getParameter (juce::String (spec.key) + "_on")->setValueNotifyingHost (1.0f);
+            silentTail (p, "amp " + juce::String (model) + " gain max + pedals");
+        }
+    }
+
     // ------------------------------------------------------------------ 1b. new gear
     log ("\n[1b] New amps (Overlord, Vapor-30) and pedals (Nuclear Fuzz, Bio-Boost, Mutant Mod), 48 kHz");
     {

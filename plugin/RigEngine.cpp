@@ -96,10 +96,10 @@ void RigEngine::readParams (Values& v) const
         o.knobs.tight = sp.tight->load() > 0.5f; o.knobs.attack = sp.attack->load();
         for (size_t b = 0; b < 8; ++b) o.knobs.eq[b] = sp.eq[b]->load();
         o.knobs.vapor = sp.vapor->load(); o.knobs.bloom = sp.bloom->load();
-        // POWER and STANDBY only exist on the Vapor-30 panel.
+        // POWER and STANDBY: every amp can be switched off or put on standby (silent, heaters warm).
         const bool vapor = o.model == tz::AmpVoicing::Vapor;
         o.amb = vapor ? sp.amb->load() : 0.0f; o.ambWidth = sp.ambWidth->load();
-        o.powered = ! vapor || (sp.power->load() > 0.5f && sp.standby->load() < 0.5f);
+        o.powered = sp.power->load() > 0.5f && sp.standby->load() < 0.5f;
     }
     for (int p = 0; p < tz::kNumPedals; ++p)
     {
@@ -144,8 +144,7 @@ void RigEngine::prepare (double sampleRate, int maxBlockSize)
         ampPower[(size_t) s].prepare (sampleRate, 0.08);
         {
             const auto& sp = slotParams[(size_t) s];
-            const bool vapor = (int) sp.model->load() == (int) tz::AmpVoicing::Vapor;
-            ampPower[(size_t) s].setImmediate (! vapor || (sp.power->load() > 0.5f && sp.standby->load() < 0.5f) ? 1.0 : 0.0);
+            ampPower[(size_t) s].setImmediate (sp.power->load() > 0.5f && sp.standby->load() < 0.5f ? 1.0 : 0.0);
         }
         ambAmount[(size_t) s].prepare (sampleRate, 0.05);
         ambience[(size_t) s].prepare (sampleRate, maxBlock);
@@ -164,7 +163,9 @@ void RigEngine::prepare (double sampleRate, int maxBlockSize)
     pedalScratch.allocate ((size_t) maxOsBlock * 2, true);
 
     topoStep = 1.0 / (0.012 * sampleRate);
-    topoGain = 1.0; topoState = 0;
+    // Start muted and fade in once the simulated tubes and filters have settled: no thump when the
+    // plugin loads, the host changes sample rate or playback starts.
+    topoGain = 0.0; topoState = 2; topoHold = (int) (0.3 * sampleRate);
     activeTopology = { routingCode.load(), activeOs, activeCabOn[0], activeCabOn[1] };
 
     tunerDecim = std::max (1, (int) std::lround (sampleRate / 16000.0));

@@ -119,7 +119,7 @@ void Header::showSettings()
         else if (r == 300) proc.setRouting (rig::Routing::defaults());
         else if (r == 400)
         {
-            settings().setValue ("classicUi", false);
+            settings().setValue ("stage2d", false);
             juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Palco 3D",
                 "Chiudi e riapri la finestra di ToxicRig: si aprira' il palco 3D.");
         }

@@ -116,7 +116,17 @@ function screenMaterial(a) {
   } };
   return m;
 }
+// Older models carry a few faces with zero-length or NaN normals; on some GPUs they shade to NaN.
+function repairNormals(root) {
+  root.traverse((o) => {
+    const n = o.isMesh && o.geometry.attributes.normal; if (!n) return;
+    const v = n.array; let bad = false;
+    for (let i = 0; i < v.length; i += 3) { const l = v[i] * v[i] + v[i + 1] * v[i + 1] + v[i + 2] * v[i + 2]; if (!(l > 1e-8)) { bad = true; break; } }
+    if (bad) { o.geometry.computeVertexNormals(); const w = o.geometry.attributes.normal.array; for (let i = 0; i < w.length; i++) if (!(w[i] === w[i])) w[i] = 0; o.geometry.attributes.normal.needsUpdate = true; }
+  });
+}
 function processAmp(def, root) {
+  repairNormals(root);
   const a = { def, root, knobs: {}, toggles: {}, sliders: {}, speakers: [], glowMats: [] };
   root.userData.amp = a;
   // Tubes and lit parts get their own material copies, tinted with this amp's colour,
@@ -985,8 +995,8 @@ function frame(now) {
   if (amp) {
     const fl = 1 + Math.sin(now / 700) * 0.05 + Math.sin(now / 53) * 0.012;
     // POWER off = everything dark; STANDBY = heaters stay warm (dim) but no signal.
-    const on = amp.def.id !== "vapor" || ampVals.power ? 1 : 0;
-    const warm = on * (amp.def.id === "vapor" && ampVals.standby ? 0.35 : 1);
+    const on = ampVals.power ? 1 : 0;
+    const warm = on * (ampVals.standby ? 0.35 : 1);
     amp.powerLevel = (amp.powerLevel ?? warm) + (warm - (amp.powerLevel ?? warm)) * 0.05;
     amp.glow.intensity = 0.05 * fl * amp.powerLevel;
     if (amp.winLight) amp.winLight.intensity = 5 * amp.powerLevel * fl;

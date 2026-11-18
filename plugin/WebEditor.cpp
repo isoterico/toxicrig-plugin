@@ -53,7 +53,7 @@ static juce::String devStageUrl() { return juce::SystemStats::getEnvironmentVari
 
 juce::String stageStatus()
 {
-    if (ui::settings().getBoolValue ("classicUi", false)) return "disattivato (scelta: interfaccia 2D)";
+    if (ui::settings().getBoolValue ("stage2d", false)) return "disattivato (scelta: interfaccia 2D)";
    #if ! JUCE_WEB_BROWSER
     return "non incluso in questa versione";
    #else
@@ -80,7 +80,7 @@ bool canUseStageEditor()
    #if ! JUCE_WEB_BROWSER
     return false;
    #else
-    if (ui::settings().getBoolValue ("classicUi", false)) return false;
+    if (ui::settings().getBoolValue ("stage2d", false)) return false;
     if (devStageUrl().isEmpty() && ! stageArchive().existsAsFile()) return false;
     return juce::WebBrowserComponent::areOptionsSupported (browserOptions());
    #endif
@@ -344,10 +344,10 @@ void WebRigEditor::onMessage (const juce::var& msg)
                                   if (fc.getResult().existsAsFile()) { proc.setUserIR (0, fc.getResult()); sendState(); } });
         return;
     }
-    if (type == "classicUi")
+    if (type == "stage2d")
     {
         // Switch to the 2D editor: takes effect when the plugin window is reopened.
-        ui::settings().setValue ("classicUi", true);
+        ui::settings().setValue ("stage2d", true);
         return;
     }
 }
